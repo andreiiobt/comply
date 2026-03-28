@@ -1,0 +1,145 @@
+@import url('https://fonts.googleapis.com/css2?family=Goudy+Bookletter+1911&display=swap');
+
+@font-face {
+  font-family: 'Averta';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: local('Averta'), local('Averta-Regular');
+}
+
+@font-face {
+  font-family: 'Averta';
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: local('Averta Medium'), local('Averta-Medium');
+}
+
+@font-face {
+  font-family: 'Averta';
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: local('Averta Semibold'), local('Averta-Semibold');
+}
+
+@font-face {
+  font-family: 'Averta';
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  src: local('Averta Bold'), local('Averta-Bold');
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 90 11% 96.5%; /* #F6F7F5 */
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 109 63% 61%;
+    --primary-foreground: 110 100% 5%;
+
+    --secondary: 96 16% 94%; /* #EFF2ED */
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 96 16% 94%; /* #EFF2ED */
+    --muted-foreground: 215.4 16.3% 46.9%; 
+
+    --accent: 114 100% 95%;
+    --accent-foreground: 108 91% 35%;
+
+    --destructive: 0 84.2% 60.2%; 
+    --destructive-foreground: 0 0% 98%; 
+
+    --border: 96 16% 89%; /* Slightly darker derivation of EFF2ED */
+    --input: 96 16% 89%;
+    --ring: 109 63% 61%;
+
+    --radius: 1rem; 
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 10%;
+    --info: 210 40% 50%;
+    --info-foreground: 0 0% 100%;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 215.4 16.3% 46.9%;
+    --sidebar-primary: 109 63% 61%;
+    --sidebar-primary-foreground: 110 100% 5%;
+    --sidebar-accent: 114 100% 95%;
+    --sidebar-accent-foreground: 108 91% 35%;
+    --sidebar-border: 214.3 31.8% 91.4%;
+    --sidebar-ring: 109 63% 61%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%; 
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%; 
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 109 63% 61%; 
+    --primary-foreground: 110 100% 5%;
+
+    --secondary: 217.2 32.6% 17.5%; 
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 108 91% 15%;
+    --accent-foreground: 109 63% 61%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 109 63% 61%;
+
+    --sidebar-background: 222.2 84% 4.9%;
+    --sidebar-foreground: 215 20.2% 65.1%;
+    --sidebar-primary: 109 63% 61%;
+    --sidebar-primary-foreground: 110 100% 5%;
+    --sidebar-accent: 108 91% 12%;
+    --sidebar-accent-foreground: 109 63% 61%;
+    --sidebar-border: 217.2 32.6% 17.5%;
+    --sidebar-ring: 109 63% 61%;
+  }
+}
+
+@layer base {
+  html, body, #root {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-tight;
+  }
+}

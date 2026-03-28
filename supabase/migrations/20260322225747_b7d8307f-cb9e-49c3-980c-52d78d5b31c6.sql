@@ -1,0 +1,1 @@
+ALTER TABLE public.incident_reports ADD COLUMN details jsonb NOT NULL DEFAULT '{}'::jsonb;

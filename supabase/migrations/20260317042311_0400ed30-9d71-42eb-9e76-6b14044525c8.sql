@@ -1,0 +1,1 @@
+ALTER TABLE public.learning_paths ADD COLUMN cover_image_url text, ADD COLUMN estimated_minutes integer;

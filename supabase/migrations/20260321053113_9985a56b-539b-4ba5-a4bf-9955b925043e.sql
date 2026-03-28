@@ -1,0 +1,1 @@
+DROP TRIGGER IF EXISTS on_profile_change_sync_kotora ON public.profiles;

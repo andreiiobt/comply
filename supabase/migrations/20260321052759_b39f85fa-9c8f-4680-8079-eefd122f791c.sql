@@ -1,0 +1,1 @@
+DROP TRIGGER IF EXISTS notify_kotora_user_sync ON public.profiles;

@@ -1,0 +1,1 @@
+ALTER TABLE public.checklist_assignments ADD COLUMN due_date timestamptz DEFAULT NULL;

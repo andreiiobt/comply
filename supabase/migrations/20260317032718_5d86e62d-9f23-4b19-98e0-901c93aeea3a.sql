@@ -1,0 +1,2 @@
+DROP POLICY "Users can update own pending submissions" ON public.checklist_submissions;
+CREATE POLICY "Users can update own pending or rejected submissions" ON public.checklist_submissions FOR UPDATE TO authenticated USING (user_id = auth.uid() AND status IN ('pending', 'rejected'));

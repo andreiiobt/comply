@@ -1,0 +1,9 @@
+#root {
+  margin: 0 auto;
+}
+
+@media print {
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  nav, .print\\:hidden, button { display: none !important; }
+  .recharts-wrapper { break-inside: avoid; }
+}

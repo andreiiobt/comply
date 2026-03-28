@@ -1,0 +1,432 @@
+import { useState, useMemo } from "react";
+
+import { useAuth } from "@/contexts/AuthContext";
+import { useBranding } from "@/contexts/BrandingProvider";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { CheckSquare, CheckCircle2, Clock, XCircle, User, Settings, ClipboardList, Play, AlertTriangle, CalendarCheck, ArrowRight } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import { format, addDays, startOfWeek, endOfWeek, isWithinInterval, isSameDay } from "date-fns";
+
+export default function AuditorHome() {
+  const { user, profile, primaryRole } = useAuth();
+  const { company } = useBranding();
+  const navigate = useNavigate();
+  const todayDayIdx = (new Date().getDay() + 6) % 7;
+  const [selectedDayIdx, setSelectedDayIdx] = useState<number | null>(todayDayIdx);
+
+  const { data: submissions = [], isLoading } = useQuery({
+    queryKey: ["my-submissions", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.
+      from("checklist_submissions").
+      select("*").
+      eq("user_id", user!.id).
+      order("created_at", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user?.id
+  });
+
+  // Fetch assignments for the current user (RLS handles filtering)
+  const { data: assignments = [] } = useQuery({
+    queryKey: ["my-checklist-assignments", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.
+      from("checklist_assignments").
+      select("template_id, due_date, recurrence_type, recurrence_days, recurrence_time");
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user?.id
+  });
+
+  const assignedTemplateIds = useMemo(
+    () => [...new Set(assignments.map((a: any) => a.template_id))],
+    [assignments]
+  );
+
+  // Build a map of template_id -> earliest due_date
+  const dueDateMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    assignments.forEach((a: any) => {
+      if (a.due_date) {
+        if (!map[a.template_id] || new Date(a.due_date) < new Date(map[a.template_id])) {
+          map[a.template_id] = a.due_date;
+        }
+      }
+    });
+    return map;
+  }, [assignments]);
+
+  // Fetch published templates that are assigned to user
+  const { data: templates = [] } = useQuery({
+    queryKey: ["assigned-templates", assignedTemplateIds],
+    queryFn: async () => {
+      if (assignedTemplateIds.length === 0) {
+        // Fallback: show all published templates if no assignments exist
+        const { data, error } = await supabase.
+        from("checklist_templates").
+        select("*").
+        eq("is_published", true).
+        eq("is_archived", false);
+        if (error) throw error;
+        return data || [];
+      }
+      const { data, error } = await supabase.
+      from("checklist_templates").
+      select("*").
+      eq("is_published", true).
+      eq("is_archived", false).
+      in("id", assignedTemplateIds);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!profile?.company_id
+  });
+
+  // Template titles for submissions
+  const pending = submissions.filter((s) => s.status === "pending");
+  const approved = submissions.filter((s) => s.status === "approved");
+  const rejected = submissions.filter((s) => s.status === "rejected");
+
+  // Due Today: compute which templates are due based on recurrence
+  const dueTodayTemplates = useMemo(() => {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0=Sun
+    const dayOfMonth = now.getDate();
+    const todayStr = format(now, "yyyy-MM-dd");
+
+    // Get unique template IDs that are due today
+    const dueTemplateIds = new Set<string>();
+    assignments.forEach((a: any) => {
+      const rt = a.recurrence_type || "none";
+      if (rt === "daily") {
+        dueTemplateIds.add(a.template_id);
+      } else if (rt === "weekly" && Array.isArray(a.recurrence_days) && a.recurrence_days.includes(dayOfWeek)) {
+        dueTemplateIds.add(a.template_id);
+      } else if (rt === "monthly" && Array.isArray(a.recurrence_days) && a.recurrence_days.includes(dayOfMonth)) {
+        dueTemplateIds.add(a.template_id);
+      }
+    });
+
+    if (dueTemplateIds.size === 0) return [];
+
+    // Check which ones have already been submitted today
+    const todaySubmissionTemplates = new Set(
+      submissions.
+      filter((s) => format(new Date(s.created_at), "yyyy-MM-dd") === todayStr).
+      map((s: any) => s.template_id).
+      filter(Boolean)
+    );
+
+    return templates.
+    filter((t: any) => dueTemplateIds.has(t.id)).
+    map((t: any) => ({
+      ...t,
+      completedToday: todaySubmissionTemplates.has(t.id)
+    }));
+  }, [assignments, templates, submissions]);
+
+  // Upcoming 7 days (excluding today)
+  const upcomingDays = useMemo(() => {
+    const now = new Date();
+    const days: {date: Date;label: string;templates: {id: string;title: string;}[];}[] = [];
+
+    for (let d = 1; d <= 7; d++) {
+      const target = addDays(now, d);
+      const dow = target.getDay();
+      const dom = target.getDate();
+
+      const dueIds = new Set<string>();
+      assignments.forEach((a: any) => {
+        const rt = a.recurrence_type || "none";
+        if (rt === "daily") dueIds.add(a.template_id);else
+        if (rt === "weekly" && Array.isArray(a.recurrence_days) && a.recurrence_days.includes(dow)) dueIds.add(a.template_id);else
+        if (rt === "monthly" && Array.isArray(a.recurrence_days) && a.recurrence_days.includes(dom)) dueIds.add(a.template_id);
+      });
+
+      // Also include templates with a one-time due_date on that day
+      Object.entries(dueDateMap).forEach(([tid, dd]) => {
+        const dueD = new Date(dd);
+        if (format(dueD, "yyyy-MM-dd") === format(target, "yyyy-MM-dd")) dueIds.add(tid);
+      });
+
+      if (dueIds.size > 0) {
+        const matched = templates.filter((t: any) => dueIds.has(t.id)).map((t: any) => ({ id: t.id, title: t.title }));
+        if (matched.length > 0) {
+          days.push({ date: target, label: format(target, "EEE, MMM d"), templates: matched });
+        }
+      }
+    }
+    return days;
+  }, [assignments, templates, dueDateMap]);
+
+
+  // Weekly activity data
+  const weekActivity = useMemo(() => {
+    const now = new Date();
+    const ws = startOfWeek(now, { weekStartsOn: 1 });
+    const we = endOfWeek(now, { weekStartsOn: 1 });
+    const dayLabels = ["M", "T", "W", "T", "F", "S", "S"];
+    const counts = Array(7).fill(0);
+    const todayIdx = (now.getDay() + 6) % 7; // Mon=0
+
+    submissions.forEach((s) => {
+      const d = new Date(s.created_at);
+      if (isWithinInterval(d, { start: ws, end: we })) {
+        const idx = (d.getDay() + 6) % 7;
+        counts[idx]++;
+      }
+    });
+
+    // Per-day due templates
+    const perDayDue: {id: string;title: string;completedThatDay: boolean;}[][] = Array.from({ length: 7 }, () => []);
+    for (let i = 0; i < 7; i++) {
+      const target = addDays(ws, i);
+      const dow = target.getDay();
+      const dom = target.getDate();
+      const targetStr = format(target, "yyyy-MM-dd");
+
+      const dueIds = new Set<string>();
+      assignments.forEach((a: any) => {
+        const rt = a.recurrence_type || "none";
+        if (rt === "daily") dueIds.add(a.template_id);else
+        if (rt === "weekly" && Array.isArray(a.recurrence_days) && a.recurrence_days.includes(dow)) dueIds.add(a.template_id);else
+        if (rt === "monthly" && Array.isArray(a.recurrence_days) && a.recurrence_days.includes(dom)) dueIds.add(a.template_id);
+      });
+      // One-time due dates
+      Object.entries(dueDateMap).forEach(([tid, dd]) => {
+        if (format(new Date(dd), "yyyy-MM-dd") === targetStr) dueIds.add(tid);
+      });
+
+      const submittedThatDay = new Set(
+        submissions.
+        filter((s) => format(new Date(s.created_at), "yyyy-MM-dd") === targetStr).
+        map((s: any) => s.template_id).
+        filter(Boolean)
+      );
+
+      perDayDue[i] = templates.
+      filter((t: any) => dueIds.has(t.id)).
+      map((t: any) => ({ id: t.id, title: t.title, completedThatDay: submittedThatDay.has(t.id) }));
+    }
+
+    // Weekly goal
+    const allDueIds = new Set<string>();
+    perDayDue.forEach((day) => day.forEach((t) => allDueIds.add(t.id)));
+    const weekSubmissionCount = counts.reduce((a, b) => a + b, 0);
+    const goalTotal = Math.max(allDueIds.size, 1);
+
+    return { dayLabels, counts, todayIdx, completed: weekSubmissionCount, goal: goalTotal, perDayDue, weekStart: ws };
+  }, [submissions, assignments, templates, dueDateMap]);
+
+  const stats = [
+  { label: "Pending", count: pending.length, icon: Clock, color: "text-muted-foreground" },
+  { label: "Approved", count: approved.length, icon: CheckCircle2, color: "text-primary" },
+  { label: "Rejected", count: rejected.length, icon: XCircle, color: "text-destructive" }];
+
+
+  const ease = [0.16, 1, 0.3, 1] as [number, number, number, number];
+
+  // Find first incomplete due-today template for CTA
+  const firstIncompleteDueToday = dueTodayTemplates.find((t) => !t.completedToday);
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Top bar */}
+      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+          <h1 className="text-lg font-display font-bold truncate">{company?.name || "Comply"}</h1>
+          <div className="flex items-center gap-1">
+            {(primaryRole === "admin" || primaryRole === "manager") &&
+            <Button variant="ghost" size="icon" className="rounded-xl" onClick={() => navigate(primaryRole === "admin" ? "/admin/dashboard" : "/manager/dashboard")}>
+                <Settings className="h-5 w-5" />
+              </Button>
+            }
+            <Button variant="ghost" size="icon" className="rounded-xl" onClick={() => navigate("/profile")}>
+              <User className="h-5 w-5" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-lg mx-auto px-4 py-6 space-y-6">
+        {/* Greeting */}
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease }}>
+          <h2 className="text-2xl font-display font-bold">
+            Hi, {profile?.full_name?.split(" ")[0] || "there"} 👋
+          </h2>
+          <p className="text-muted-foreground text-sm mt-1">Your compliance submissions at a glance.</p>
+          <div className="flex flex-wrap gap-2 mt-3">
+            <Button
+              size="sm"
+              className="rounded-xl gap-1.5"
+              onClick={() => navigate("/my-checklists")}>
+              <ClipboardList className="h-3.5 w-3.5" />
+              Checklists
+            </Button>
+            <Button
+              size="sm"
+              className="rounded-xl gap-1.5"
+              onClick={() => navigate("/my-submissions")}>
+              <CheckSquare className="h-3.5 w-3.5" />
+              Submissions
+            </Button>
+          </div>
+        </motion.div>
+
+        {/* Stats row */}
+        <div className="grid grid-cols-3 gap-2.5">
+          {stats.map((stat, i) =>
+          <motion.div key={stat.label} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 * i, duration: 0.5, ease }}>
+              <Card className="rounded-2xl">
+                <CardContent className="p-3 text-center">
+                  <stat.icon className={`h-5 w-5 mx-auto mb-1 ${stat.color}`} />
+                  <p className="text-lg font-display font-bold tabular-nums">{stat.count}</p>
+                  <p className="text-[10px] text-muted-foreground leading-tight">{stat.label}</p>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+        </div>
+
+        {/* Activity Calendar with inline day detail */}
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08, duration: 0.5, ease }}>
+          <Card className="rounded-2xl">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-display flex items-center gap-2">
+                <CalendarCheck className="h-4 w-4 text-primary" />
+                Activity
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0 space-y-4">
+              {/* Day-of-week row */}
+              <div className="grid grid-cols-7 gap-1">
+                {weekActivity.dayLabels.map((label, i) => {
+                  const isToday = i === weekActivity.todayIdx;
+                  const isSelected = selectedDayIdx === i;
+                  const count = weekActivity.counts[i];
+                  const hasDue = weekActivity.perDayDue[i].length > 0;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => setSelectedDayIdx(isSelected ? null : i)}
+                      className="flex flex-col items-center gap-1.5 group">
+                      
+                      <span className="text-[10px] font-medium text-muted-foreground">{label}</span>
+                      <div
+                        className={cn(
+                          "w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold tabular-nums transition-all",
+                          isSelected ?
+                          "ring-2 ring-primary ring-offset-2 ring-offset-background" :
+                          "",
+                          isToday ?
+                          "bg-primary text-primary-foreground" :
+                          count > 0 ?
+                          "bg-primary/15 text-primary" :
+                          "bg-muted text-muted-foreground",
+                          "active:scale-95"
+                        )}>
+                        
+                        {count}
+                      </div>
+                      {hasDue &&
+                      <span className={cn("w-1 h-1 rounded-full", isToday ? "bg-primary" : "bg-muted-foreground/40")} />
+                      }
+                    </button>);
+
+                })}
+              </div>
+
+              {/* Selected day detail */}
+              {selectedDayIdx !== null &&
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="border-t pt-3">
+                
+                  <p className="text-xs font-medium text-muted-foreground mb-2">
+                    {format(addDays(weekActivity.weekStart, selectedDayIdx), "EEEE, MMM d")}
+                    {selectedDayIdx === weekActivity.todayIdx &&
+                  <span className="text-primary ml-1">· Today</span>
+                  }
+                  </p>
+                  {weekActivity.perDayDue[selectedDayIdx].length === 0 ?
+                <p className="text-sm text-muted-foreground py-2">Nothing due this day.</p> :
+
+                <div className="space-y-1">
+                      {weekActivity.perDayDue[selectedDayIdx].map((tpl) =>
+                  <div key={tpl.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {tpl.completedThatDay ?
+                      <CheckCircle2 className="h-4 w-4 text-primary shrink-0" /> :
+
+                      <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+                      }
+                            <p className={cn(
+                        "text-sm font-display font-semibold truncate",
+                        tpl.completedThatDay && "text-muted-foreground line-through"
+                      )}>
+                              {tpl.title}
+                            </p>
+                          </div>
+                          {!tpl.completedThatDay && selectedDayIdx === weekActivity.todayIdx &&
+                    <Button size="sm" className="rounded-xl gap-1 shrink-0" onClick={() => navigate(`/checklist/${tpl.id}`)}>
+                              <Play className="h-3.5 w-3.5" /> Start
+                            </Button>
+                    }
+                          {!tpl.completedThatDay && selectedDayIdx !== weekActivity.todayIdx &&
+                    <Badge variant="outline" className="text-[10px] shrink-0">Scheduled</Badge>
+                    }
+                        </div>
+                  )}
+                    </div>
+                }
+                </motion.div>
+              }
+
+              {/* Weekly goal */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-medium text-muted-foreground">Weekly goal</p>
+                  <p className="text-xs font-bold tabular-nums">
+                    {weekActivity.completed}/{weekActivity.goal}
+                  </p>
+                </div>
+                <Progress
+                  value={Math.min(weekActivity.completed / weekActivity.goal * 100, 100)}
+                  className="h-2 rounded-full" />
+                
+              </div>
+
+              {/* CTA */}
+              <Button
+                className="w-full rounded-xl gap-2"
+                onClick={() => {
+                  if (firstIncompleteDueToday) {
+                    navigate(`/checklist/${firstIncompleteDueToday.id}`);
+                  } else {
+                    navigate("/my-checklists");
+                  }
+                }}>
+                
+                Continue compliance
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+    </div>
+  );
+}

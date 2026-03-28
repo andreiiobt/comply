@@ -1,0 +1,1 @@
+ALTER TABLE public.companies ADD COLUMN polar_customer_id text UNIQUE;

@@ -1,0 +1,1 @@
+UPDATE public.companies SET polar_customer_id = 'e924f4c1-7501-4366-8bf6-780a31711227' WHERE id = 'd2fc1464-e4f4-4c43-9a1a-158b6ef01437';
