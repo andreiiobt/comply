@@ -19,26 +19,39 @@ Deno.serve(async (req) => {
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      console.error("Missing or invalid Authorization header");
+      return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnon = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    console.log(`Auth request for project: ${supabaseUrl}`);
+
+    const supabaseUser = createClient(supabaseUrl, supabaseAnon, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const { data: { user: authUser }, error: userErr } = await supabaseUser.auth.getUser();
+
+    if (userErr || !authUser) {
+      console.error("Auth verification failed:", userErr?.message || "User not found");
+      return new Response(JSON.stringify({ 
+        error: "Unauthorized", 
+        details: userErr?.message,
+        hint: "Ensure SUPABASE_URL and SUPABASE_ANON_KEY match your project settings." 
+      }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const userId = authUser.id;
+    console.log(`Authenticated user: ${userId}`);
 
     const { company_id } = await req.json();
     if (!company_id) {

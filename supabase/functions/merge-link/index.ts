@@ -24,7 +24,8 @@ Deno.serve(async (req) => {
   // Authenticate caller
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    console.error("Missing or invalid Authorization header");
+    return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -34,17 +35,27 @@ Deno.serve(async (req) => {
   const supabaseAnon = Deno.env.get("SUPABASE_ANON_KEY")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+  console.log(`Auth request for project: ${supabaseUrl}`);
+
   const supabaseUser = createClient(supabaseUrl, supabaseAnon, {
     global: { headers: { Authorization: authHeader } },
   });
+
   const { data: { user: authUser }, error: userErr } = await supabaseUser.auth.getUser();
+
   if (userErr || !authUser) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    console.error("Auth verification failed:", userErr?.message || "User not found");
+    return new Response(JSON.stringify({ 
+      error: "Unauthorized", 
+      details: userErr?.message,
+      hint: "Ensure SUPABASE_URL and SUPABASE_ANON_KEY match your project settings." 
+    }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
   const userId = authUser.id;
+  console.log(`Authenticated user: ${userId}`);
 
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
