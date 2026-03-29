@@ -5,12 +5,13 @@ import { useBranding } from "@/contexts/BrandingProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CreditCard, Users, Calendar, Loader2, ExternalLink, Zap } from "lucide-react";
+import { CreditCard, Users, Calendar, Loader2, ExternalLink, Zap, RefreshCcw } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Billing() {
   const { profile } = useAuth();
   const { company } = useBranding();
+  const queryClient = useQueryClient();
 
   const { data: subscriptionData, isLoading } = useQuery({
     queryKey: ["polar-subscription", profile?.company_id],
@@ -45,16 +46,53 @@ export default function Billing() {
     onError: () => toast.error("Failed to open customer portal"),
   });
 
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke("polar-sync-seats", {
+        body: { company_id: profile!.company_id },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success(data.summary || "Subscription seats synchronized");
+      queryClient.invalidateQueries({ queryKey: ["polar-subscription"] });
+    },
+    onError: (error: any) => {
+      console.error("Sync error:", error);
+      toast.error("Failed to sync seats: " + (error.message || "Unknown error"));
+    },
+  });
+
   const subStatus = subscriptionData?.status;
   const hasActiveSubscription = subStatus === "active" || subStatus === "trialing";
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-display font-bold text-foreground">Billing</h1>
-        <p className="text-muted-foreground">
-          Manage your subscription for {company?.name || "your company"}
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-display font-bold text-foreground">Billing</h1>
+          <p className="text-muted-foreground">
+            Manage your subscription for {company?.name || "your company"}
+          </p>
+        </div>
+        
+        {hasActiveSubscription && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            {syncMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <RefreshCcw className="h-4 w-4 mr-2" />
+            )}
+            Refresh seat sync
+          </Button>
+        )}
       </div>
 
       {/* Trial Status */}
@@ -142,16 +180,31 @@ export default function Billing() {
                 variant={hasActiveSubscription ? "outline" : "default"}
                 onClick={() => portalMutation.mutate()}
                 disabled={portalMutation.isPending}
-                className={!hasActiveSubscription ? "rounded-xl" : ""}
+                className={!hasActiveSubscription ? "rounded-xl px-6" : ""}
               >
                 {portalMutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 ) : (
                   <ExternalLink className="h-4 w-4 mr-2" />
                 )}
-                Manage Subscription
+                {hasActiveSubscription ? "Manage Subscription" : "Choose a Plan"}
               </Button>
             </div>
+
+            {hasActiveSubscription && (
+              <div className="flex items-center gap-4 text-sm text-muted-foreground py-2 border-y border-border/50">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  <span>{subscriptionData.subscription.seats} location seats</span>
+                </div>
+                {subscriptionData.subscription.current_period_end && (
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    <span>Next renewal: {new Date(subscriptionData.subscription.current_period_end).toLocaleDateString()}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {hasActiveSubscription && subscriptionData?.subscription?.cancel_at_period_end && (
               <div className="rounded-xl bg-destructive/10 border border-destructive/20 p-3">
@@ -161,8 +214,10 @@ export default function Billing() {
               </div>
             )}
 
-            <p className="text-sm text-muted-foreground pt-2">
-              All subscription management, plan changes, and invoicing are handled securely through our Polar billing portal.
+            <p className="text-sm text-muted-foreground pt-1">
+              {!hasActiveSubscription 
+                ? "You haven't activated a subscription yet. Click 'Choose a Plan' to select a module and start your subscription securely via our Polar partner portal."
+                : "All subscription management, plan changes, and invoicing are handled securely through our Polar billing portal."}
             </p>
           </div>
         </CardContent>

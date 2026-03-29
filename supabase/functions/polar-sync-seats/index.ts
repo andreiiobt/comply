@@ -54,18 +54,11 @@ Deno.serve(async (req) => {
     );
 
     // Get company's Polar customer ID
-    const { data: company } = await adminClient
+    let { data: company } = await adminClient
       .from("companies")
       .select("polar_customer_id")
       .eq("id", company_id)
       .single();
-
-    if (!company?.polar_customer_id) {
-      return new Response(JSON.stringify({ error: "Company not linked to Polar" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
     // Count locations in this company
     const { count: locationCount } = await adminClient
@@ -73,43 +66,86 @@ Deno.serve(async (req) => {
       .select("*", { count: "exact", head: true })
       .eq("company_id", company_id);
 
-    // Get active subscription for this customer
-    const subsRes = await fetch(
-      `${POLAR_API}/subscriptions/?customer_id=${company.polar_customer_id}&active=true`,
-      {
-        headers: { Authorization: `Bearer ${POLAR_ACCESS_TOKEN}` },
+    const seatsToSet = locationCount || 1;
+
+    // Robust lookup: Try by existing polar_customer_id first, then fallback to external_customer_id
+    let activeSubscriptions: any[] = [];
+    
+    if (company?.polar_customer_id) {
+      const subsRes = await fetch(
+        `${POLAR_API}/subscriptions/?customer_id=${company.polar_customer_id}&active=true`,
+        { headers: { Authorization: `Bearer ${POLAR_ACCESS_TOKEN}` } }
+      );
+      if (subsRes.ok) {
+        const data = await subsRes.json();
+        activeSubscriptions = data.items || [];
       }
-    );
-    const subsData = await subsRes.json();
-    if (!subsRes.ok) {
-      throw new Error(`Polar subscriptions error [${subsRes.status}]: ${JSON.stringify(subsData)}`);
     }
 
-    if (!subsData.items || subsData.items.length === 0) {
+    // If no active subs found, try by external_customer_id (handles stale or missing polar_customer_id)
+    if (activeSubscriptions.length === 0) {
+      const extRes = await fetch(
+        `${POLAR_API}/subscriptions/?external_customer_id=${company_id}&active=true`,
+        { headers: { Authorization: `Bearer ${POLAR_ACCESS_TOKEN}` } }
+      );
+      if (extRes.ok) {
+        const data = await extRes.json();
+        activeSubscriptions = data.items || [];
+        
+        // If we found them via external_id, update our local polar_customer_id for consistency
+        if (activeSubscriptions.length > 0 && activeSubscriptions[0].customer_id) {
+          await adminClient
+            .from("companies")
+            .update({ polar_customer_id: activeSubscriptions[0].customer_id })
+            .eq("id", company_id);
+        }
+      }
+    }
+
+    if (activeSubscriptions.length === 0) {
       return new Response(
-        JSON.stringify({ message: "No active subscription found", location_count: locationCount }),
+        JSON.stringify({ 
+          message: "No active or trialing subscriptions found to sync.", 
+          location_count: locationCount 
+        }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Update seat count on the subscription
-    const subscription = subsData.items[0];
-    const updateRes = await fetch(`${POLAR_API}/subscriptions/${subscription.id}/`, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${POLAR_ACCESS_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ seats: locationCount || 1 }),
-    });
+    // Update seat count on ALL active/trialing subscriptions
+    const results = [];
+    for (const sub of activeSubscriptions) {
+      // Doubly verify status is active or trialing
+      if (sub.status !== "active" && sub.status !== "trialing") continue;
 
-    const updateData = await updateRes.json();
-    if (!updateRes.ok) {
-      throw new Error(`Polar seat update error [${updateRes.status}]: ${JSON.stringify(updateData)}`);
+      console.log(`Updating sub ${sub.id} to ${seatsToSet} seats`);
+      const updateRes = await fetch(`${POLAR_API}/subscriptions/${sub.id}/`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${POLAR_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ seats: seatsToSet }),
+      });
+
+      const updateData = await updateRes.json();
+      results.push({
+        id: sub.id,
+        product: sub.product?.name,
+        success: updateRes.ok,
+        error: updateRes.ok ? null : updateData
+      });
     }
 
+    const failed = results.filter(r => !r.success);
+
     return new Response(
-      JSON.stringify({ success: true, locations: locationCount, subscription_id: subscription.id }),
+      JSON.stringify({ 
+        success: failed.length === 0, 
+        locations: locationCount, 
+        results,
+        summary: `Updated ${results.length - failed.length}/${results.length} subscriptions.`
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
