@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, MapPin, Users, Palette, LogOut, BarChart3, CheckSquare, Tag, Plug, Home, ClipboardList, AlertTriangle, CalendarCheck, CreditCard,
+  LayoutDashboard, MapPin, Users, Palette, LogOut, BarChart3, CheckSquare, Tag, Plug, Home, ClipboardList, AlertTriangle, CalendarCheck, CreditCard, FileText,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate } from "react-router-dom";
@@ -34,6 +34,7 @@ const navGroups = [
       { title: "Submissions", url: "/admin/checklists", icon: ClipboardList },
       { title: "Incidents", url: "/admin/incidents", icon: AlertTriangle },
       { title: "Reports", url: "/admin/reports", icon: BarChart3 },
+      { title: "Policies", url: "/admin/policies", icon: FileText },
     ],
   },
   {

@@ -24,7 +24,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, X, ClipboardList, ChevronUp, ChevronDown, Tag, Camera, CalendarIcon, Check, ListChecks, MapPin, Archive, RotateCcw, History } from "lucide-react";
+import { Plus, Pencil, Trash2, X, ClipboardList, ChevronUp, ChevronDown, Tag, Camera, CalendarIcon, Check, ListChecks, MapPin, Archive, RotateCcw, History, UserCheck } from "lucide-react";
 import VersionHistoryDialog from "@/components/VersionHistoryDialog";
 import { type ChecklistItem, normalizeItems } from "@/lib/checklist-utils";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -64,13 +64,14 @@ const emptyForm = {
   is_published: false,
   selectedLocationIds: [] as string[],
   selectedTagIds: [] as string[],
+  selectedCustomRoleIds: [] as string[],
   schedule: { ...emptySchedule },
 };
 
 const STEPS = [
   { label: "Details", icon: ClipboardList },
   { label: "Items", icon: ListChecks },
-  { label: "Locations", icon: MapPin },
+  { label: "Assignment", icon: MapPin },
 ];
 
 export default function ChecklistTemplates() {
@@ -169,8 +170,8 @@ export default function ChecklistTemplates() {
         .filter((i) => i.text);
       if (!form.title.trim()) throw new Error("Title is required");
       if (cleanItems.length === 0) throw new Error("Add at least one checklist item");
-      if (form.selectedLocationIds.length === 0 && form.selectedTagIds.length === 0)
-        throw new Error("Select at least one location or tag");
+      if (form.selectedLocationIds.length === 0 && form.selectedTagIds.length === 0 && form.selectedCustomRoleIds.length === 0)
+        throw new Error("Select at least one location, tag, or custom role");
 
       const payload = {
         title: form.title.trim(),
@@ -246,6 +247,23 @@ export default function ChecklistTemplates() {
           });
         });
 
+        // Custom role assignments
+        form.selectedCustomRoleIds.forEach((roleId) => {
+          const roleName = customRoles.find((r: any) => r.id === roleId)?.name;
+          if (roleName) {
+            assignRows.push({
+              template_id: templateId!,
+              company_id: companyId!,
+              assign_type: "custom_role",
+              assign_value: roleName,
+              due_date: form.schedule.due_date || null,
+              recurrence_type: form.schedule.recurrence_type || "none",
+              recurrence_days: form.schedule.recurrence_days.length > 0 ? form.schedule.recurrence_days : null,
+              recurrence_time: form.schedule.recurrence_time || "09:00",
+            });
+          }
+        });
+
         if (assignRows.length > 0) {
           const { error } = await supabase.from("checklist_assignments").insert(assignRows);
           if (error) throw error;
@@ -315,6 +333,12 @@ export default function ChecklistTemplates() {
     const tagIds = tplAssignments
       .filter((a: any) => a.assign_type === "location_tag" && a.assign_value)
       .map((a: any) => a.assign_value as string);
+    const customRoleNames = tplAssignments
+      .filter((a: any) => a.assign_type === "custom_role" && a.assign_value)
+      .map((a: any) => a.assign_value as string);
+    const customRoleIds = customRoles
+      .filter((r: any) => customRoleNames.includes(r.name))
+      .map((r: any) => r.id);
     const firstAssign = tplAssignments[0] as any;
 
     setEditingId(t.id);
@@ -326,6 +350,7 @@ export default function ChecklistTemplates() {
       is_published: t.is_published,
       selectedLocationIds: locationIds,
       selectedTagIds: tagIds,
+      selectedCustomRoleIds: customRoleIds,
       schedule: {
         due_date: firstAssign?.due_date || null,
         recurrence_type: firstAssign?.recurrence_type || "none",
@@ -428,6 +453,17 @@ export default function ChecklistTemplates() {
     const m: Record<string, string[]> = {};
     allAssignments.forEach((a: any) => {
       if (a.assign_type === "location_tag" && a.assign_value) {
+        if (!m[a.template_id]) m[a.template_id] = [];
+        if (!m[a.template_id].includes(a.assign_value)) m[a.template_id].push(a.assign_value);
+      }
+    });
+    return m;
+  }, [allAssignments]);
+
+  const templateCustomRoleMap = useMemo(() => {
+    const m: Record<string, string[]> = {};
+    allAssignments.forEach((a: any) => {
+      if (a.assign_type === "custom_role" && a.assign_value) {
         if (!m[a.template_id]) m[a.template_id] = [];
         if (!m[a.template_id].includes(a.assign_value)) m[a.template_id].push(a.assign_value);
       }
@@ -562,6 +598,7 @@ export default function ChecklistTemplates() {
             const photoCount = t.items.filter((i) => i.requires_photo).length;
             const tplLocations = templateLocationMap[t.id] || [];
             const tplTags = templateTagMap[t.id] || [];
+            const tplCustomRoles = templateCustomRoleMap[t.id] || [];
             return (
               <Card key={t.id} className="group relative transition-shadow ">
                 <CardHeader className="pb-3">
@@ -587,7 +624,7 @@ export default function ChecklistTemplates() {
                       </Badge>
                     )}
                   </div>
-                  {(tplLocations.length > 0 || tplTags.length > 0) && (
+                  {(tplLocations.length > 0 || tplTags.length > 0 || tplCustomRoles.length > 0) && (
                     <div className="flex items-center gap-1.5 flex-wrap mt-2">
                       {tplTags.map((tagId) => {
                         const tag = tagMap[tagId];
@@ -605,6 +642,11 @@ export default function ChecklistTemplates() {
                       {tplLocations.map((locId) => (
                         <Badge key={locId} variant="outline" className="text-[10px] gap-1">
                           <MapPin className="h-2.5 w-2.5" /> {locationMap[locId] || locId}
+                        </Badge>
+                      ))}
+                      {tplCustomRoles.map((roleName) => (
+                        <Badge key={roleName} variant="outline" className="text-[10px] gap-1 border-violet-400 text-violet-600">
+                          <UserCheck className="h-2.5 w-2.5" /> {roleName}
                         </Badge>
                       ))}
                     </div>
@@ -895,6 +937,46 @@ export default function ChecklistTemplates() {
                     </div>
                   )}
                 </div>
+
+                {/* Assign by Custom Role */}
+                {customRoles.length > 0 && (
+                  <div>
+                    <Label className="text-sm font-medium mb-2 block">Assign by Custom Role</Label>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Only users with the selected custom roles will need to complete this checklist.
+                    </p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {customRoles.map((role: any) => {
+                        const isSelected = form.selectedCustomRoleIds.includes(role.id);
+                        return (
+                          <label
+                            key={role.id}
+                            className={cn(
+                              "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
+                              isSelected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+                            )}
+                          >
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() =>
+                                setForm((f) => ({
+                                  ...f,
+                                  selectedCustomRoleIds: isSelected
+                                    ? f.selectedCustomRoleIds.filter((id) => id !== role.id)
+                                    : [...f.selectedCustomRoleIds, role.id],
+                                }))
+                              }
+                            />
+                            <div className="flex items-center gap-2">
+                              <UserCheck className="h-4 w-4 text-muted-foreground shrink-0" />
+                              <span className="text-sm font-medium">{role.name}</span>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Schedule */}
                 <Card className="p-4 space-y-3">

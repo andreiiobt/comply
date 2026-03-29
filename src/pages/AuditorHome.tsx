@@ -13,8 +13,11 @@ import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { format, addDays, startOfWeek, endOfWeek, isWithinInterval, isSameDay } from "date-fns";
+import NotificationBell from "@/components/NotificationBell";
+import { useExpiryCheck } from "@/hooks/useExpiryCheck";
 
 export default function AuditorHome() {
+  useExpiryCheck();
   const { user, profile, primaryRole } = useAuth();
   const { company } = useBranding();
   const navigate = useNavigate();
@@ -251,6 +254,7 @@ export default function AuditorHome() {
                 <Settings className="h-5 w-5" />
               </Button>
             }
+            <NotificationBell />
             <Button variant="ghost" size="icon" className="rounded-xl" onClick={() => navigate("/profile")}>
               <User className="h-5 w-5" />
             </Button>
@@ -264,7 +268,7 @@ export default function AuditorHome() {
           <h2 className="text-2xl font-display font-bold">
             Hi, {profile?.full_name?.split(" ")[0] || "there"} 👋
           </h2>
-          <p className="text-muted-foreground text-sm mt-1">Your compliance submissions at a glance.</p>
+          <p className="text-muted-foreground text-sm mt-1">Your morning check-in at a glance.</p>
           <div className="flex flex-wrap gap-2 mt-3">
             <Button
               size="sm"
@@ -420,7 +424,7 @@ export default function AuditorHome() {
                   }
                 }}>
                 
-                Continue compliance
+                Continue tasks
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </CardContent>

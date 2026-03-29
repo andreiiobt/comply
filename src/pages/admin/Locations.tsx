@@ -114,6 +114,14 @@ export default function Locations() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["locations"] });
       queryClient.invalidateQueries({ queryKey: ["location-tag-assignments"] });
+      
+      // Trigger Polar sync for new locations
+      if (!editId && profile?.company_id) {
+        supabase.functions.invoke("polar-sync-seats", {
+          body: { company_id: profile.company_id }
+        }).catch(err => console.error("Polar sync failed:", err));
+      }
+      
       toast.success(editId ? "Location updated" : "Location added");
       resetForm();
     },
@@ -127,6 +135,11 @@ export default function Locations() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["locations"] });
+      if (profile?.company_id) {
+        supabase.functions.invoke("polar-sync-seats", {
+          body: { company_id: profile.company_id }
+        }).catch(err => console.error("Polar sync failed:", err));
+      }
       toast.success("Location deleted");
     },
     onError: (e) => toast.error(e.message),

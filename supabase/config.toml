@@ -5,3 +5,11 @@ project_id = "belpronrmaoebmfqvucv"
     verify_jwt = false
   [functions.process-email-queue]
     verify_jwt = true
+  [functions.merge-link]
+    verify_jwt = false
+  [functions.merge-fetch-fields]
+    verify_jwt = false
+  [functions.merge-sync]
+    verify_jwt = false
+  [functions.apply-hris-mappings]
+    verify_jwt = false

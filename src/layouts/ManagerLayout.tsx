@@ -4,6 +4,8 @@ import { ManagerSidebar } from "@/components/ManagerSidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { TrialBanner } from "@/components/TrialBanner";
+import NotificationBell from "@/components/NotificationBell";
+
 import {
   Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
@@ -69,14 +71,17 @@ export default function ManagerLayout() {
                 </BreadcrumbList>
               </Breadcrumb>
             </div>
-            <Link to="/profile" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-              <span className="text-sm text-muted-foreground hidden sm:block">{profile?.full_name}</span>
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-primary/10 text-primary text-xs font-display font-bold">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-            </Link>
+            <div className="flex items-center gap-3">
+              <NotificationBell />
+              <Link to="/profile" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+                <span className="text-sm text-muted-foreground hidden sm:block">{profile?.full_name}</span>
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="bg-primary/10 text-primary text-xs font-display font-bold">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+              </Link>
+            </div>
           </header>
           <TrialBanner />
           <main className="flex-1 p-4 sm:p-6 overflow-auto">

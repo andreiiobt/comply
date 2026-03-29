@@ -1,5 +1,6 @@
 import { useState } from "react";
 import UserDetailView from "@/components/admin/UserDetailView";
+import { UserCard } from "@/components/admin/UserCard";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -17,7 +18,7 @@ import {
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Users as UsersIcon, Shield, UserCog, User, UserPlus, Copy, Link2, Mail, Trash2, Clock, Tag, ArrowLeft, ArrowRight, Pencil, X, Check, MapPin, Search, Filter, Eye } from "lucide-react";
+import { Users as UsersIcon, Shield, UserCog, User, UserPlus, Copy, Link2, Mail, Trash2, Clock, Tag, ArrowLeft, ArrowRight, Search, Filter, Eye, ChevronRight, Home, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -30,10 +31,10 @@ const roleIcons: Record<string, any> = {
 };
 
 const roleColors: Record<string, string> = {
-  admin: "bg-primary/10 text-primary",
-  manager: "bg-secondary/10 text-secondary",
-  supervisor: "bg-accent/10 text-accent-foreground",
-  staff: "bg-muted text-muted-foreground",
+  admin: "bg-primary/10 text-primary border-primary/20",
+  manager: "bg-secondary/10 text-secondary border-secondary/20",
+  supervisor: "bg-accent/10 text-accent-foreground border-accent/20",
+  staff: "bg-muted text-muted-foreground border-muted-foreground/20",
 };
 
 function generateInviteCode(): string {
@@ -60,11 +61,13 @@ export default function AdminUsers() {
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
 
   // Edit user state
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editRole, setEditRole] = useState<string>("staff");
-  const [editLocationId, setEditLocationId] = useState<string>("");
-  const [editCustomRoleIds, setEditCustomRoleIds] = useState<string[]>([]);
+  const [editingUser, setEditingUser] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    role: "staff",
+    locationId: "none",
+    customRoleIds: [] as string[],
+  });
 
   // Delete user state
   const [deleteConfirmUser, setDeleteConfirmUser] = useState<{ user_id: string; full_name: string | null } | null>(null);
@@ -266,21 +269,22 @@ export default function AdminUsers() {
     onError: (error: any) => toast.error(error.message || "Failed to remove user"),
   });
 
-  const saveUserEdits = async (p: any) => {
-    const roleRow = p.user_roles?.[0];
+  const saveUserEdits = async () => {
+    if (!editingUser) return;
+    const roleRow = editingUser.user_roles?.[0];
     try {
-      await updateProfileMutation.mutateAsync({ userId: p.user_id, fullName: editName });
+      await updateProfileMutation.mutateAsync({ userId: editingUser.user_id, fullName: editForm.name });
       if (roleRow) {
         await updateUserRoleMutation.mutateAsync({
           roleRowId: roleRow.id,
-          role: editRole,
-          locationId: editLocationId && editLocationId !== "none" ? editLocationId : null,
+          role: editForm.role,
+          locationId: editForm.locationId && editForm.locationId !== "none" ? editForm.locationId : null,
         });
       }
-      await updateCustomRolesMutation.mutateAsync({ userId: p.user_id, roleIds: editCustomRoleIds });
+      await updateCustomRolesMutation.mutateAsync({ userId: editingUser.user_id, roleIds: editForm.customRoleIds });
       queryClient.invalidateQueries({ queryKey: ["admin-profiles"] });
       queryClient.invalidateQueries({ queryKey: ["admin-user-custom-roles"] });
-      setEditingUserId(null);
+      setEditingUser(null);
       toast.success("User updated");
     } catch (err: any) {
       toast.error(err.message);
@@ -289,11 +293,13 @@ export default function AdminUsers() {
 
   const startEditing = (p: any) => {
     const roleRow = p.user_roles?.[0];
-    setEditingUserId(p.user_id);
-    setEditName(p.full_name || "");
-    setEditRole(roleRow?.role || "staff");
-    setEditLocationId(roleRow?.location_id || "none");
-    setEditCustomRoleIds(getUserCustomRoleIds(p.user_id));
+    setEditingUser(p);
+    setEditForm({
+      name: p.full_name || "",
+      role: roleRow?.role || "staff",
+      locationId: roleRow?.location_id || "none",
+      customRoleIds: getUserCustomRoleIds(p.user_id),
+    });
   };
 
   // --- Helpers ---
@@ -557,6 +563,15 @@ export default function AdminUsers() {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumbs */}
+      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+        <Home className="h-4 w-4" />
+        <ChevronRight className="h-3 w-3" />
+        <span>People</span>
+        <ChevronRight className="h-3 w-3" />
+        <span className="text-foreground font-medium">Users</span>
+      </div>
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold">Users</h1>
@@ -564,7 +579,10 @@ export default function AdminUsers() {
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetDialog(); }}>
           <DialogTrigger asChild>
-            <Button className="rounded-xl gap-2"><UserPlus className="h-4 w-4" />Invite User</Button>
+            <Button className="rounded-xl gap-2 h-11 px-6 font-display font-bold">
+              <UserPlus className="h-4 w-4" />
+              Invite User
+            </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-md rounded-2xl">
             <DialogHeader>
@@ -584,40 +602,49 @@ export default function AdminUsers() {
 
       {/* Pending Invitations */}
       {pendingInvites.length > 0 && (
-        <Card className="rounded-2xl ">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-display flex items-center gap-2">
-              <Clock className="h-4 w-4 text-muted-foreground" />
+        <Card className="rounded-2xl border-none bg-muted/30">
+          <CardHeader className="pb-3 px-4 pt-4">
+            <CardTitle className="text-sm font-display font-bold flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
+              <Clock className="h-4 w-4" />
               Pending Invitations ({pendingInvites.length})
             </CardTitle>
           </CardHeader>
-          <CardContent className="pt-0">
-            <div className="space-y-2">
+          <CardContent className="px-2 pb-2">
+            <div className="grid gap-2">
               {pendingInvites.map((inv: any) => (
-                <div key={inv.id} className="flex items-center justify-between p-3 rounded-xl border bg-muted/30">
+                <div key={inv.id} className="flex items-center justify-between p-3 rounded-xl bg-background/50 hover:bg-background transition-colors group">
                   <div className="flex items-center gap-3 min-w-0">
-                    <Badge variant="secondary" className="rounded-lg capitalize shrink-0">{inv.role}</Badge>
-                    {inv.sub_role && (
-                      <Badge variant="outline" className="rounded-lg text-xs gap-1 shrink-0">
-                        <Tag className="h-3 w-3" />{inv.sub_role}
-                      </Badge>
-                    )}
-                    <span className="text-sm truncate">
-                      {inv.email || (
-                        <span className="text-muted-foreground flex items-center gap-1">
-                          <Link2 className="h-3 w-3" /> Link invite
+                    <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                      <Mail className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium truncate">
+                          {inv.email || "Link Invite"}
                         </span>
-                      )}
-                    </span>
-                    <span className="text-xs text-muted-foreground shrink-0">
-                      expires {format(new Date(inv.expires_at), "MMM d")}
-                    </span>
+                        <Badge variant="outline" className={`text-xs px-1.5 h-4 capitalize border-none ${roleColors[inv.role] || ""}`}>
+                          {inv.role}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-2.5 w-2.5" />
+                          Expires {format(new Date(inv.expires_at), "MMM d")}
+                        </span>
+                        {inv.sub_role && (
+                          <span className="flex items-center gap-1">
+                            <Tag className="h-2.5 w-2.5" />
+                            {inv.sub_role.split(",").join(", ")}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Button size="sm" variant="ghost" onClick={() => copyToClipboard(`${window.location.origin}/invite/${inv.invite_code}`)}>
+                  <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg" onClick={() => copyToClipboard(`${window.location.origin}/invite/${inv.invite_code}`)}>
                       <Copy className="h-3.5 w-3.5" />
                     </Button>
-                    <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => revokeInviteMutation.mutate(inv.id)}>
+                    <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => revokeInviteMutation.mutate(inv.id)}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -629,81 +656,75 @@ export default function AdminUsers() {
       )}
 
       {/* Filters */}
-      <Card className="rounded-2xl ">
-        <CardContent className="p-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by name…"
-                value={filterName}
-                onChange={(e) => setFilterName(e.target.value)}
-                className="pl-9 rounded-xl h-10"
-              />
-            </div>
-            <Select value={filterRole} onValueChange={setFilterRole}>
-              <SelectTrigger className="w-36 rounded-xl h-10">
-                <SelectValue placeholder="All roles" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All roles</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
-                <SelectItem value="manager">Manager</SelectItem>
-                <SelectItem value="supervisor">Supervisor</SelectItem>
-                <SelectItem value="staff">Staff</SelectItem>
-              </SelectContent>
-            </Select>
-            {locations.length > 0 && (
-              <Select value={filterLocationId} onValueChange={setFilterLocationId}>
-                <SelectTrigger className="w-44 rounded-xl h-10">
-                  <SelectValue placeholder="All locations" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All locations</SelectItem>
-                  {locations.map((loc: any) => (
-                    <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {customRoles.length > 0 && (
-              <Select value={filterCustomRoleId} onValueChange={setFilterCustomRoleId}>
-                <SelectTrigger className="w-44 rounded-xl h-10">
-                  <SelectValue placeholder="All custom roles" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All custom roles</SelectItem>
-                  {customRoles.map((r: any) => (
-                    <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {(filterName || filterRole !== "all" || filterLocationId !== "all" || filterCustomRoleId !== "all") && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="rounded-xl text-xs gap-1"
-                onClick={() => { setFilterName(""); setFilterRole("all"); setFilterLocationId("all"); setFilterCustomRoleId("all"); }}
-              >
-                <X className="h-3.5 w-3.5" /> Clear
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by name…"
+            value={filterName}
+            onChange={(e) => setFilterName(e.target.value)}
+            className="pl-9 rounded-xl h-11 border-none bg-muted/30 focus-visible:ring-primary/20"
+          />
+        </div>
+        <Select value={filterRole} onValueChange={setFilterRole}>
+          <SelectTrigger className="w-36 rounded-xl h-11 border-none bg-muted/30 focus:ring-primary/20">
+            <SelectValue placeholder="All roles" />
+          </SelectTrigger>
+          <SelectContent className="rounded-xl">
+            <SelectItem value="all">All roles</SelectItem>
+            <SelectItem value="admin">Admin</SelectItem>
+            <SelectItem value="manager">Manager</SelectItem>
+            <SelectItem value="supervisor">Supervisor</SelectItem>
+            <SelectItem value="staff">Staff</SelectItem>
+          </SelectContent>
+        </Select>
+        {locations.length > 0 && (
+          <Select value={filterLocationId} onValueChange={setFilterLocationId}>
+            <SelectTrigger className="w-44 rounded-xl h-11 border-none bg-muted/30 focus:ring-primary/20">
+              <SelectValue placeholder="All locations" />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              <SelectItem value="all">All locations</SelectItem>
+              {locations.map((loc: any) => (
+                <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {customRoles.length > 0 && (
+          <Select value={filterCustomRoleId} onValueChange={setFilterCustomRoleId}>
+            <SelectTrigger className="w-44 rounded-xl h-11 border-none bg-muted/30 focus:ring-primary/20">
+              <SelectValue placeholder="All custom roles" />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              <SelectItem value="all">All custom roles</SelectItem>
+              {customRoles.map((r: any) => (
+                <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {(filterName || filterRole !== "all" || filterLocationId !== "all" || filterCustomRoleId !== "all") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="rounded-xl text-xs gap-1 h-11 px-4 hover:bg-muted/50"
+            onClick={() => { setFilterName(""); setFilterRole("all"); setFilterLocationId("all"); setFilterCustomRoleId("all"); }}
+          >
+            <X className="h-3.5 w-3.5" /> Clear filters
+          </Button>
+        )}
+      </div>
 
       {/* User List */}
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
-            <Card key={i} className="rounded-2xl  animate-pulse">
-              <CardContent className="p-6 h-28" />
-            </Card>
+            <Card key={i} className="rounded-2xl h-48 animate-pulse bg-muted/20" />
           ))}
         </div>
       ) : filteredProfiles.length === 0 ? (
-        <Card className="rounded-2xl  -dashed">
+        <Card className="rounded-2xl border-dashed">
           <CardContent className="flex flex-col items-center py-12">
             <UsersIcon className="h-12 w-12 text-muted-foreground/40 mb-4" />
             <p className="text-muted-foreground">
@@ -717,149 +738,105 @@ export default function AdminUsers() {
             const userRoles = p.user_roles || [];
             const roleRow = userRoles[0];
             const userCustomRoleNames = getUserCustomRoleNames(p.user_id);
-            const isEditing = editingUserId === p.user_id;
             const locationName = roleRow ? getLocationName(roleRow.location_id) : null;
 
             return (
-              <motion.div key={p.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-                <Card className="rounded-2xl   hover:-primary/30 transition-all cursor-pointer" onClick={() => !isEditing && setSelectedUser({ user_id: p.user_id, full_name: p.full_name })}>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                          <span className="text-sm font-display font-bold text-primary">
-                            {(p.full_name || "?")[0].toUpperCase()}
-                          </span>
-                        </div>
-                        <div className="min-w-0">
-                          {isEditing ? (
-                            <Input
-                              value={editName}
-                              onChange={(e) => setEditName(e.target.value)}
-                              className="h-8 text-sm font-display font-semibold rounded-lg"
-                              placeholder="Full name"
-                            />
-                          ) : (
-                            <>
-                              <CardTitle className="text-base font-display truncate">{p.full_name || "Unnamed"}</CardTitle>
-                              <p className="text-xs text-muted-foreground">{p.xp} XP</p>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      {!isEditing && (
-                        <div className="flex items-center gap-0.5 shrink-0">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); startEditing(p); }}>
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteConfirmUser({ user_id: p.user_id, full_name: p.full_name }); }}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    {isEditing ? (
-                      <div className="space-y-3" onClick={e => e.stopPropagation()}>
-                        {/* System Role */}
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-medium text-muted-foreground">System Role</Label>
-                          <Select value={editRole} onValueChange={setEditRole}>
-                            <SelectTrigger className="h-9 rounded-lg text-sm">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {(["admin", "manager", "supervisor", "staff"] as const).map(r => (
-                                <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        {/* Location */}
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-medium text-muted-foreground">Location</Label>
-                          <Select value={editLocationId} onValueChange={setEditLocationId}>
-                            <SelectTrigger className="h-9 rounded-lg text-sm">
-                              <SelectValue placeholder="No location" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">No location</SelectItem>
-                              {locations.map((loc: any) => (
-                                <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        {/* Custom Roles */}
-                        {customRoles.length > 0 && (
-                          <div className="space-y-1.5">
-                            <Label className="text-xs font-medium text-muted-foreground">Custom Roles</Label>
-                            <div className="border rounded-xl p-2 space-y-1.5 max-h-32 overflow-y-auto">
-                              {customRoles.map((r: any) => (
-                                <label key={r.id} className="flex items-center gap-2 cursor-pointer">
-                                  <Checkbox
-                                    checked={editCustomRoleIds.includes(r.id)}
-                                    onCheckedChange={() => toggleCustomRoleId(r.id, editCustomRoleIds, setEditCustomRoleIds)}
-                                  />
-                                  <span className="text-xs">{r.name}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Save / Cancel */}
-                        <div className="flex gap-2 pt-1">
-                          <Button
-                            size="sm"
-                            className="h-8 rounded-lg text-xs gap-1 flex-1"
-                            onClick={(e) => { e.stopPropagation(); saveUserEdits(p); }}
-                            disabled={updateProfileMutation.isPending || updateUserRoleMutation.isPending}
-                          >
-                            <Check className="h-3.5 w-3.5" /> Save
-                          </Button>
-                          <Button size="sm" variant="outline" className="h-8 rounded-lg text-xs gap-1" onClick={(e) => { e.stopPropagation(); setEditingUserId(null); }}>
-                            <X className="h-3.5 w-3.5" /> Cancel
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex flex-wrap gap-1.5">
-                          {userRoles.length === 0 && (
-                            <Badge variant="outline" className="rounded-lg text-xs">No role</Badge>
-                          )}
-                          {userRoles.map((r: any, j: number) => {
-                            const Icon = roleIcons[r.role as keyof typeof roleIcons] || User;
-                            return (
-                              <Badge key={j} className={`rounded-lg text-xs gap-1 ${roleColors[r.role] || ""}`} variant="secondary">
-                                <Icon className="h-3 w-3" />{r.role}
-                              </Badge>
-                            );
-                          })}
-                          {locationName && (
-                            <Badge variant="outline" className="rounded-lg text-xs gap-1">
-                              <MapPin className="h-3 w-3" />{locationName}
-                            </Badge>
-                          )}
-                          {userCustomRoleNames.map((name, j) => (
-                            <Badge key={`cr-${j}`} variant="outline" className="rounded-lg text-xs gap-1">
-                              <Tag className="h-3 w-3" />{name}
-                            </Badge>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              </motion.div>
+              <UserCard
+                key={p.user_id}
+                user={p}
+                role={roleRow?.role}
+                locationName={locationName}
+                customRoles={userCustomRoleNames}
+                index={i}
+                onClick={() => setSelectedUser({ user_id: p.user_id, full_name: p.full_name })}
+                onEdit={() => startEditing(p)}
+                onDelete={() => setDeleteConfirmUser({ user_id: p.user_id, full_name: p.full_name })}
+              />
             );
           })}
         </div>
       )}
+
+      {/* Edit User Dialog */}
+      <Dialog open={!!editingUser} onOpenChange={(open) => !open && setEditingUser(null)}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display">Edit User Profile</DialogTitle>
+            <DialogDescription>Update system details for {editingUser?.full_name}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Full Name</Label>
+              <Input
+                value={editForm.name}
+                onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                className="h-11 rounded-xl"
+              />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>System Role</Label>
+                <Select value={editForm.role} onValueChange={(r) => setEditForm(prev => ({ ...prev, role: r }))}>
+                  <SelectTrigger className="h-11 rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(["admin", "manager", "supervisor", "staff"] as const).map(r => (
+                      <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Primary Location</Label>
+                <Select value={editForm.locationId} onValueChange={(l) => setEditForm(prev => ({ ...prev, locationId: l }))}>
+                  <SelectTrigger className="h-11 rounded-xl">
+                    <SelectValue placeholder="No location" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No location</SelectItem>
+                    {locations.map((loc: any) => (
+                      <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {customRoles.length > 0 && (
+              <div className="space-y-2">
+                <Label>Custom Roles</Label>
+                <div className="flex flex-wrap gap-2 p-3 rounded-xl border bg-muted/20">
+                  {customRoles.map((r: any) => {
+                    const isSelected = editForm.customRoleIds.includes(r.id);
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => toggleCustomRoleId(r.id, editForm.customRoleIds, (v) => setEditForm(prev => ({ ...prev, customRoleIds: v })))}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                          isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        }`}
+                      >
+                        <Tag className="h-3 w-3" />
+                        {r.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingUser(null)} className="rounded-xl">Cancel</Button>
+            <Button onClick={saveUserEdits} className="rounded-xl" disabled={updateProfileMutation.isPending || updateUserRoleMutation.isPending}>
+              {updateProfileMutation.isPending || updateUserRoleMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!deleteConfirmUser} onOpenChange={(open) => { if (!open) setDeleteConfirmUser(null); }}>
         <AlertDialogContent className="rounded-2xl">

@@ -196,9 +196,33 @@ export default function ChecklistReview() {
         .eq("id", id);
       if (error) throw error;
     },
-    onSuccess: (_, { status }) => {
+    onSuccess: async (_, { id, status }) => {
       queryClient.invalidateQueries({ queryKey: ["checklist-submissions-review"] });
       toast.success(`Submission ${status}`);
+
+      if (status === "rejected") {
+        const sub = submissions.find(s => s.id === id);
+        if (sub && user) {
+          // Get the admin's company_id to use for the notification
+          const { data: adminProfile } = await supabase
+            .from("profiles")
+            .select("company_id")
+            .eq("user_id", user.id)
+            .single();
+
+          if (adminProfile?.company_id) {
+            await supabase.from("notifications" as any).insert({
+              user_id: sub.user_id,
+              company_id: adminProfile.company_id,
+              title: "Checklist Rejected",
+              message: `Your submission for "${getSubmissionTitle(sub)}" was rejected. Note: ${reviewNote[id] || "No notes provided."}`,
+              type: "error",
+              link: `/submission/${id}`,
+              status: "unread"
+            });
+          }
+        }
+      }
     },
   });
 

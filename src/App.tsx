@@ -28,6 +28,7 @@ const ChecklistReview = lazy(() => import("./pages/admin/ChecklistReview"));
 const ChecklistTemplates = lazy(() => import("./pages/admin/ChecklistTemplates"));
 const CustomRoles = lazy(() => import("./pages/admin/CustomRoles"));
 const Integrations = lazy(() => import("./pages/admin/Integrations"));
+const AdminPolicies = lazy(() => import("./pages/admin/Policies"));
 const ManagerLayout = lazy(() => import("./layouts/ManagerLayout"));
 const ManagerDashboard = lazy(() => import("./pages/manager/Dashboard"));
 const ManagerStaff = lazy(() => import("./pages/manager/Staff"));
@@ -58,6 +59,8 @@ const ReportIncident = lazy(() => import("./pages/staff/ReportIncident"));
 const SubmissionDetail = lazy(() => import("./pages/staff/SubmissionDetail"));
 const MyChecklists = lazy(() => import("./pages/staff/MyChecklists"));
 const MySubmissions = lazy(() => import("./pages/staff/MySubmissions"));
+const StaffCompliance = lazy(() => import("./pages/staff/Compliance"));
+const Notifications = lazy(() => import("./pages/Notifications"));
 
 const queryClient = new QueryClient();
 
@@ -97,6 +100,7 @@ const App = () => (
                     <Route path="branding" element={<Branding />} />
                     <Route path="billing" element={<Billing />} />
                     <Route path="integrations" element={<Integrations />} />
+                    <Route path="policies" element={<AdminPolicies />} />
                     <Route path="incidents" element={<AdminIncidentReports />} />
                     <Route path="incidents/:id" element={<AdminIncidentReportDetail />} />
                     <Route path="report-incident" element={<ReportIncident />} />
@@ -138,7 +142,9 @@ const App = () => (
                   <Route path="/submission/:id" element={<ProtectedRoute><SubmissionDetail /></ProtectedRoute>} />
                   <Route path="/my-checklists" element={<ProtectedRoute><MyChecklists /></ProtectedRoute>} />
                   <Route path="/my-submissions" element={<ProtectedRoute><MySubmissions /></ProtectedRoute>} />
+                  <Route path="/compliance" element={<ProtectedRoute><StaffCompliance /></ProtectedRoute>} />
                   <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                  <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
   
                   <Route path="*" element={<NotFound />} />
                 </Routes>

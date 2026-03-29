@@ -143,3 +143,66 @@
     @apply font-display tracking-tight;
   }
 }
+
+/* ── TipTap rich editor styles ─────────────────────────────────── */
+.ProseMirror {
+  outline: none;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  color: hsl(var(--muted-foreground));
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.ProseMirror h1 { @apply text-2xl font-display font-bold mt-4 mb-2; }
+.ProseMirror h2 { @apply text-xl font-display font-bold mt-3 mb-1.5; }
+.ProseMirror h3 { @apply text-lg font-display font-semibold mt-2 mb-1; }
+.ProseMirror p  { @apply my-1.5 leading-relaxed; }
+.ProseMirror ul { @apply list-disc pl-5 my-2 space-y-0.5; }
+.ProseMirror ol { @apply list-decimal pl-5 my-2 space-y-0.5; }
+.ProseMirror li { @apply leading-relaxed; }
+.ProseMirror blockquote {
+  @apply border-l-4 border-primary/30 pl-4 italic text-muted-foreground my-3;
+}
+.ProseMirror code {
+  @apply bg-muted text-primary text-[0.85em] rounded px-1.5 py-0.5 font-mono;
+}
+.ProseMirror pre {
+  @apply bg-muted rounded-xl p-4 my-3 overflow-x-auto;
+}
+.ProseMirror pre code {
+  @apply bg-transparent p-0 rounded-none text-sm;
+}
+.ProseMirror hr {
+  @apply border-border my-4;
+}
+.ProseMirror a {
+  @apply text-primary underline underline-offset-2;
+}
+.ProseMirror strong { @apply font-bold; }
+.ProseMirror em     { @apply italic; }
+.ProseMirror s      { @apply line-through; }
+
+/* ── Global prose overflow guard (staff policy reader) ─────────── */
+.prose {
+  overflow-x: hidden;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+.prose pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: hidden;
+}
+.prose img {
+  max-width: 100%;
+  height: auto;
+}
+.prose table {
+  width: 100%;
+  table-layout: fixed;
+  word-break: break-word;
+}
