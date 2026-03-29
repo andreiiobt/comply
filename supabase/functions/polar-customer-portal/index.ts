@@ -55,31 +55,62 @@ Deno.serve(async (req) => {
 
     const { data: company } = await adminClient
       .from("companies")
-      .select("polar_customer_id")
+      .select("name, polar_customer_id")
       .eq("id", company_id)
       .single();
 
-    if (!company?.polar_customer_id) {
-       return new Response(JSON.stringify({ error: "Company not linked to Polar" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (!company) throw new Error("Company not found");
 
-    const portalRes = await fetch(`${POLAR_API}/customer-sessions/`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${POLAR_ACCESS_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        customer_id: company.polar_customer_id,
-      }),
-    });
+    // Unified Logic: Ensure customer exists in Polar and is linked to our external ID
+    // We'll first try to create the session with external_customer_id.
+    // If it fails with 404, we'll create the customer and then try again.
+    
+    const createSession = async (extId: string) => {
+      return await fetch(`${POLAR_API}/customer-sessions/`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${POLAR_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ external_customer_id: extId }),
+      });
+    };
+
+    let portalRes = await createSession(company_id);
+    
+    if (portalRes.status === 404) {
+      console.log("Customer not found in Polar, creating one now...");
+      const createRes = await fetch(`${POLAR_API}/customers/`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${POLAR_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: `${company_id}@company.comply.app`, // Fallback email
+          name: company.name,
+          external_id: company_id,
+        }),
+      });
+
+      if (!createRes.ok) {
+        const err = await createRes.json();
+        throw new Error(`Failed to create Polar customer: ${JSON.stringify(err)}`);
+      }
+
+      const newCustomer = await createRes.json();
+      await adminClient
+        .from("companies")
+        .update({ polar_customer_id: newCustomer.id })
+        .eq("id", company_id);
+
+      // Retry session creation
+      portalRes = await createSession(company_id);
+    }
 
     const portalData = await portalRes.json();
     if (!portalRes.ok) {
-      throw new Error(`Polar API error [${portalRes.status}]: ${JSON.stringify(portalData)}`);
+      throw new Error(`Polar Portal API error [${portalRes.status}]: ${JSON.stringify(portalData)}`);
     }
 
     return new Response(

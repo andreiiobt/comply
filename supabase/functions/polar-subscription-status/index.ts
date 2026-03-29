@@ -28,29 +28,26 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnon = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-    console.log(`Auth request for project: ${supabaseUrl}`);
-
-    const supabaseUser = createClient(supabaseUrl, supabaseAnon, {
+    const supabase = createClient(supabaseUrl, supabaseAnon, {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const { data: { user: authUser }, error: userErr } = await supabaseUser.auth.getUser();
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
 
-    if (userErr || !authUser) {
-      console.error("Auth verification failed:", userErr?.message || "User not found");
+    if (claimsError || !claimsData?.claims) {
+      console.error("Auth verification failed:", claimsError?.message || "Invalid token");
       return new Response(JSON.stringify({ 
         error: "Unauthorized", 
-        details: userErr?.message,
-        hint: "Ensure SUPABASE_URL and SUPABASE_ANON_KEY match your project settings." 
+        details: claimsError?.message,
+        hint: "Token verification failed. Check project environment variables." 
       }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const userId = authUser.id;
+    const userId = claimsData.claims.sub;
     console.log(`Authenticated user: ${userId}`);
 
     const { company_id } = await req.json();

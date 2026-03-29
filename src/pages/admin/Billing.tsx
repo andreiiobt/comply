@@ -27,15 +27,17 @@ export default function Billing() {
 
   const portalMutation = useMutation({
     mutationFn: async () => {
-      // First ensure the company is linked to Polar
-      await supabase.functions.invoke("polar-create-customer", {
-        body: { company_id: profile!.company_id },
-      });
-
       const { data, error } = await supabase.functions.invoke("polar-customer-portal", {
         body: { company_id: profile!.company_id },
       });
-      if (error) throw error;
+      
+      if (error) {
+        // If it's a 401, provide a more helpful error
+        if (error.message?.includes("401") || error.status === 401) {
+          throw new Error("Authentication failed. Please try logging out and back in, or contact support if the issue persists.");
+        }
+        throw error;
+      }
       return data;
     },
     onSuccess: (data) => {
@@ -43,7 +45,10 @@ export default function Billing() {
         window.location.href = data.url;
       }
     },
-    onError: () => toast.error("Failed to open customer portal"),
+    onError: (error: any) => {
+      console.error("Portal error:", error);
+      toast.error(error.message || "Failed to open customer portal");
+    },
   });
 
   const syncMutation = useMutation({
