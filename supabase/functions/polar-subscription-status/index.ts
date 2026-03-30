@@ -14,9 +14,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const POLAR_ACCESS_TOKEN = Deno.env.get("POLAR_ACCESS_TOKEN");
-    if (!POLAR_ACCESS_TOKEN) throw new Error("POLAR_ACCESS_TOKEN is not configured");
-
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       console.error("Missing or invalid Authorization header");
@@ -32,22 +29,17 @@ Deno.serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-    if (claimsError || !claimsData?.claims) {
-      console.error("Auth verification failed:", claimsError?.message || "Invalid token");
-      return new Response(JSON.stringify({ 
-        error: "Unauthorized", 
-        details: claimsError?.message,
-        hint: "Token verification failed. Check project environment variables." 
-      }), {
+    if (userError || !user) {
+      console.error("Auth verification failed:", userError?.message || "Invalid token");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const userId = claimsData.claims.sub;
+    const userId = user.id;
     console.log(`Authenticated user: ${userId}`);
 
     const { company_id } = await req.json();
@@ -69,7 +61,70 @@ Deno.serve(async (req) => {
       .eq("id", company_id)
       .single();
 
+    // Only check Polar token when we actually need to call the Polar API
+    const POLAR_ACCESS_TOKEN = Deno.env.get("POLAR_ACCESS_TOKEN");
+
+    // If no Polar customer linked yet, still try external_customer_id lookup in case
+    // checkout completed but the DB hasn't been updated yet
     if (!company?.polar_customer_id) {
+      if (!POLAR_ACCESS_TOKEN) {
+        // No token and no customer — genuinely not set up
+        return new Response(
+          JSON.stringify({
+            status: "not_linked",
+            subscription: null,
+            product: null,
+            location_count: 0,
+            trial_ends_at: company?.trial_ends_at || null,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const extRes = await fetch(
+        `${POLAR_API}/subscriptions/?external_customer_id=${company_id}&active=true`,
+        { headers: { Authorization: `Bearer ${POLAR_ACCESS_TOKEN}` } }
+      );
+      if (extRes.ok) {
+        const extData = await extRes.json();
+        const activeSub = extData.items?.find(
+          (s: any) => s.status === "active" || s.status === "trialing"
+        );
+        if (activeSub?.customer_id) {
+          // Subscription found — link the customer in the DB for future calls
+          await adminClient
+            .from("companies")
+            .update({ polar_customer_id: activeSub.customer_id })
+            .eq("id", company_id);
+
+          const { count: locationCount } = await adminClient
+            .from("locations")
+            .select("*", { count: "exact", head: true })
+            .eq("company_id", company_id);
+
+          return new Response(
+            JSON.stringify({
+              status: activeSub.status,
+              subscription: {
+                id: activeSub.id,
+                status: activeSub.status,
+                current_period_start: activeSub.current_period_start,
+                current_period_end: activeSub.current_period_end,
+                cancel_at_period_end: activeSub.cancel_at_period_end,
+                seats: activeSub.seats,
+                amount: activeSub.amount,
+                currency: activeSub.currency,
+              },
+              product: activeSub.product
+                ? { id: activeSub.product.id, name: activeSub.product.name }
+                : null,
+              location_count: locationCount || 0,
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+
       return new Response(
         JSON.stringify({
           status: "not_linked",
@@ -81,6 +136,8 @@ Deno.serve(async (req) => {
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    if (!POLAR_ACCESS_TOKEN) throw new Error("POLAR_ACCESS_TOKEN is not configured");
 
     // Get location count
     const { count: locationCount } = await adminClient

@@ -13,3 +13,7 @@ project_id = "belpronrmaoebmfqvucv"
     verify_jwt = false
   [functions.apply-hris-mappings]
     verify_jwt = false
+  [functions.accept-invite]
+    verify_jwt = false
+  [functions.send-invite-email]
+    verify_jwt = false

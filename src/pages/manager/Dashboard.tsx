@@ -4,8 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+
 import { Users, TrendingUp, CheckSquare, CheckCircle2, AlertTriangle, FileWarning } from "lucide-react";
-import { motion } from "framer-motion";
+import { StatsGrid, type StatItem } from "@/components/StatsGrid";
+import { submissionStatusColor } from "@/lib/statusColors";
 
 export default function ManagerDashboard() {
   const navigate = useNavigate();
@@ -94,11 +96,11 @@ export default function ManagerDashboard() {
 
   const recentSubmissions = submissions.slice(0, 5);
 
-  const stats = [
+  const stats: StatItem[] = [
     { title: "Staff Members", value: staffIds.length.toString(), icon: Users, color: "text-primary" },
     { title: "Approval Rate", value: `${approvalRate}%`, icon: TrendingUp, color: "text-secondary" },
     { title: "Submissions", value: totalSubmissions.toString(), icon: CheckSquare, color: "text-accent" },
-    { title: "Overdue", value: overdueCount.toString(), icon: AlertTriangle, color: overdueCount > 0 ? "text-destructive" : "text-muted-foreground" },
+    { title: "Overdue", value: overdueCount.toString(), icon: AlertTriangle, color: overdueCount > 0 ? "text-destructive" : "text-muted-foreground", highlight: overdueCount > 0 },
   ];
 
   return (
@@ -113,21 +115,7 @@ export default function ManagerDashboard() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        {stats.map((stat, i) => (
-          <motion.div key={stat.title} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
-            <Card className="rounded-2xl ">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
-                <stat.icon className={`h-5 w-5 ${stat.color}`} />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl sm:text-3xl font-display font-bold ${stat.title === "Overdue" && overdueCount > 0 ? "text-destructive" : ""}`}>{stat.value}</div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-      </div>
+      <StatsGrid stats={stats} />
 
       {recentSubmissions.length > 0 && (
         <Card className="rounded-2xl ">
@@ -141,7 +129,7 @@ export default function ManagerDashboard() {
               <div key={c.id} className="flex items-center justify-between text-sm py-1.5 border-b last:border-0">
                 <span className="font-display font-semibold">{nameMap[c.user_id] || "Staff"}</span>
                 <div className="flex items-center gap-2">
-                  <span className={`text-xs font-medium ${c.status === "approved" ? "text-primary" : c.status === "pending" ? "text-muted-foreground" : "text-destructive"}`}>
+                  <span className={`text-xs font-medium capitalize ${submissionStatusColor(c.status)}`}>
                     {c.status}
                   </span>
                   <span className="text-xs text-muted-foreground">{new Date(c.created_at).toLocaleDateString()}</span>

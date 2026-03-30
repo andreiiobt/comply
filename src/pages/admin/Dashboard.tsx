@@ -3,13 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Users, MapPin, CheckSquare, TrendingUp, AlertTriangle, FileWarning, ArrowRight } from "lucide-react";
-import { motion } from "framer-motion";
 import { useBranding } from "@/contexts/BrandingProvider";
 import { useAuth } from "@/contexts/AuthContext";
 import WelcomeOnboardingModal from "@/components/WelcomeOnboardingModal";
 import { useLocationData } from "@/hooks/useLocationData";
 import { LocationCard } from "@/components/admin/LocationCard";
+import { StatsGrid, type StatItem } from "@/components/StatsGrid";
 
 export default function AdminDashboard() {
   const { company } = useBranding();
@@ -81,12 +82,12 @@ export default function AdminDashboard() {
     },
   });
 
-  const stats = [
+  const stats: StatItem[] = [
     { title: "Total Users", value: userCount.toString(), icon: Users, color: "text-primary", href: "/admin/users" },
     { title: "Locations", value: locationCount.toString(), icon: MapPin, color: "text-secondary", href: "/admin/locations" },
     { title: "Submissions", value: checklistCount.toString(), icon: CheckSquare, color: "text-accent", href: "/admin/checklists" },
     { title: "Approval Rate", value: `${approvalRate}%`, icon: TrendingUp, color: "text-primary", href: "/admin/reports" },
-    { title: "Overdue", value: overdueCount.toString(), icon: AlertTriangle, color: overdueCount > 0 ? "text-destructive" : "text-muted-foreground", href: "/admin/checklists" },
+    { title: "Overdue", value: overdueCount.toString(), icon: AlertTriangle, color: overdueCount > 0 ? "text-destructive" : "text-muted-foreground", href: "/admin/checklists", highlight: overdueCount > 0 },
   ];
 
   return (
@@ -101,24 +102,7 @@ export default function AdminDashboard() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        {stats.map((stat, i) => (
-          <motion.div key={stat.title} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
-            <Card
-              className={`rounded-2xl   transition-shadow ${stat.href ? "cursor-pointer" : ""}`}
-              onClick={() => stat.href && navigate(stat.href)}
-            >
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
-                <stat.icon className={`h-5 w-5 ${stat.color}`} />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl sm:text-3xl font-display font-bold ${stat.title === "Overdue" && overdueCount > 0 ? "text-destructive" : ""}`}>{stat.value}</div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-      </div>
+      <StatsGrid stats={stats} cols={5} onStatClick={(s) => s.href && navigate(s.href)} />
 
 
       <Card className="rounded-2xl ">
@@ -148,8 +132,15 @@ export default function AdminDashboard() {
         {isLoadingLocations ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3].map((i) => (
-              <Card key={i} className="rounded-2xl  animate-pulse">
-                <CardContent className="p-6 h-28" />
+              <Card key={i} className="rounded-2xl">
+                <CardContent className="p-6 space-y-3">
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-3 w-1/2" />
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <Skeleton className="h-3 w-full" />
+                    <Skeleton className="h-3 w-full" />
+                  </div>
+                </CardContent>
               </Card>
             ))}
           </div>

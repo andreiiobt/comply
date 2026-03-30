@@ -31,9 +31,8 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -76,8 +75,7 @@ Deno.serve(async (req) => {
     }
 
     // Get admin user email for the customer
-    const userId = claimsData.claims.sub as string;
-    const { data: { user } } = await adminClient.auth.admin.getUserById(userId);
+    const { data: { user: adminUser } } = await adminClient.auth.admin.getUserById(user.id);
 
     // Try to create Polar customer
     const polarRes = await fetch(`${POLAR_API}/customers/`, {
@@ -87,7 +85,7 @@ Deno.serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        email: user?.email || `${company_id}@company.comply.app`,
+        email: adminUser?.email || `${company_id}@company.comply.app`,
         name: company.name,
         external_id: company_id,
         metadata: { company_id, company_name: company.name },

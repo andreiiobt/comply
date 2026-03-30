@@ -9,6 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, MapPin, FileText, ShieldAlert, Search, Clock } from "lucide-react";
 import { useState, useMemo } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
 
 export default function ManagerIncidentReports() {
   const navigate = useNavigate();
@@ -146,9 +148,19 @@ export default function ManagerIncidentReports() {
       <Card className="rounded-2xl">
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="p-8 text-center text-muted-foreground">Loading…</div>
+            <div className="p-4 space-y-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex items-center gap-4 py-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 flex-1" />
+                  <Skeleton className="h-7 w-28 rounded-lg" />
+                </div>
+              ))}
+            </div>
           ) : filtered.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">No incident reports found.</div>
+            <EmptyState inline icon={AlertTriangle} title="No incident reports found" description="Try adjusting the status filter." />
           ) : (
             <Table>
               <TableHeader>

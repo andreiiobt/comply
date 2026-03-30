@@ -7,9 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle } from "lucide-react";
-import { useState } from "react";
-
+import { Skeleton } from "@/components/ui/skeleton";
+import { AlertTriangle, FileText, ShieldAlert, Search, Clock } from "lucide-react";
+import { useState, useMemo } from "react";
+import { EmptyState } from "@/components/EmptyState";
+import { incidentStatusConfig } from "@/lib/statusColors";
 
 export default function SupervisorIncidentReports() {
   const navigate = useNavigate();
@@ -49,6 +51,17 @@ export default function SupervisorIncidentReports() {
     enabled: userIds.length > 0,
   });
 
+  const stats = useMemo(() => {
+    const s = { total: 0, open: 0, investigating: 0, resolved: 0 };
+    reports.forEach((r: any) => {
+      s.total++;
+      if (r.status === "open") s.open++;
+      if (r.status === "investigating") s.investigating++;
+      if (r.status === "resolved") s.resolved++;
+    });
+    return s;
+  }, [reports]);
+
   const filtered = reports.filter((r: any) => {
     if (statusFilter !== "all" && r.status !== statusFilter) return false;
     return true;
@@ -63,6 +76,28 @@ export default function SupervisorIncidentReports() {
         </h1>
         <p className="text-muted-foreground text-sm mt-1">View incident reports from your department.</p>
       </div>
+
+      {/* Summary stats bar */}
+      {!isLoading && reports.length > 0 && (
+        <div className="flex gap-3 flex-wrap">
+          <Badge variant="secondary" className="text-sm px-3 py-1">
+            <FileText className="h-3.5 w-3.5 mr-1" />
+            {stats.total} Total
+          </Badge>
+          <Badge variant="destructive" className="text-sm px-3 py-1">
+            <ShieldAlert className="h-3.5 w-3.5 mr-1" />
+            {stats.open} Open
+          </Badge>
+          <Badge className="text-sm px-3 py-1 bg-amber-500/10 text-amber-600 border-amber-500/20">
+            <Search className="h-3.5 w-3.5 mr-1" />
+            {stats.investigating} Investigating
+          </Badge>
+          <Badge className="text-sm px-3 py-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+            <Clock className="h-3.5 w-3.5 mr-1" />
+            {stats.resolved} Resolved
+          </Badge>
+        </div>
+      )}
 
       <div className="flex gap-3">
         <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -80,9 +115,19 @@ export default function SupervisorIncidentReports() {
       <Card className="rounded-2xl">
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="p-8 text-center text-muted-foreground">Loading…</div>
+            <div className="p-4 space-y-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex items-center gap-4 py-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 flex-1" />
+                  <Skeleton className="h-6 w-24 rounded-lg" />
+                </div>
+              ))}
+            </div>
           ) : filtered.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">No incident reports found.</div>
+            <EmptyState inline icon={AlertTriangle} title="No incident reports found" description="Try adjusting the status filter." />
           ) : (
             <Table>
               <TableHeader>
@@ -95,44 +140,49 @@ export default function SupervisorIncidentReports() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((r: any) => (
-                  <TableRow key={r.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/supervisor/incidents/${r.id}`)}>
-                    <TableCell className="text-sm tabular-nums whitespace-nowrap">
-                      {format(new Date(r.incident_date), "MMM d, yyyy")}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      <Link
-                        to={`/supervisor/staff/${r.user_id}`}
-                        className="text-primary hover:underline"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {(profileMap as any)[r.user_id] || "—"}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {r.assigned_to ? (
+                {filtered.map((r: any) => {
+                  const statusCfg = incidentStatusConfig[r.status] ?? incidentStatusConfig.closed;
+                  return (
+                    <TableRow key={r.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/supervisor/incidents/${r.id}`)}>
+                      <TableCell className="text-sm tabular-nums whitespace-nowrap">
+                        {format(new Date(r.incident_date), "MMM d, yyyy")}
+                      </TableCell>
+                      <TableCell className="text-sm">
                         <Link
-                          to={`/supervisor/staff/${r.assigned_to}`}
+                          to={`/supervisor/staff/${r.user_id}`}
                           className="text-primary hover:underline"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {(profileMap as any)[r.assigned_to] || "—"}
+                          {(profileMap as any)[r.user_id] || "—"}
                         </Link>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <p className="text-sm font-medium">{r.title}</p>
-                        <p className="text-xs text-muted-foreground line-clamp-1">{r.description}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="capitalize text-xs">{r.status}</Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {r.assigned_to ? (
+                          <Link
+                            to={`/supervisor/staff/${r.assigned_to}`}
+                            className="text-primary hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {(profileMap as any)[r.assigned_to] || "—"}
+                          </Link>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="text-sm font-medium">{r.title}</p>
+                          <p className="text-xs text-muted-foreground line-clamp-1">{r.description}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={`text-xs capitalize rounded-lg ${statusCfg.className}`}>
+                          {statusCfg.label}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

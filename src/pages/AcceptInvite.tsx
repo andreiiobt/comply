@@ -66,10 +66,32 @@ export default function AcceptInvite() {
       window.location.href = "/";
     } catch (err: any) {
       toast.error(err.message);
-    } finally {
       setIsSubmitting(false);
     }
   };
+
+  // Auto-accept when a logged-in user lands on the invite page (e.g. after email verification redirect)
+  useEffect(() => {
+    if (user && invite && !loadingInvite && !authLoading) {
+      // If the invite is already accepted, just redirect home — don't re-invoke
+      if (invite.status === "accepted") {
+        window.location.href = "/";
+        return;
+      }
+      setIsSubmitting(true);
+      supabase.functions
+        .invoke("accept-invite", { body: { inviteCode: code } })
+        .then(({ data, error }) => {
+          if (error || data?.error) {
+            toast.error(data?.error || error?.message || "Failed to accept invite");
+            setIsSubmitting(false);
+          } else {
+            toast.success("You've joined the team!");
+            window.location.href = "/";
+          }
+        });
+    }
+  }, [user, invite, loadingInvite, authLoading]);
 
   const handleSignupAndAccept = async (e: React.FormEvent) => {
     e.preventDefault();

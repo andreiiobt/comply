@@ -36,29 +36,26 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabaseUser.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
+    const { data: { user }, error: claimsError } = await supabaseUser.auth.getUser();
+    if (claimsError || !user) {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const userId = claimsData.claims.sub;
+    const userId = user.id;
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Fetch invitation
+    // Fetch invitation — allow pending or already-accepted-by-this-user (recovery path)
     const { data: invite, error: inviteError } = await supabaseAdmin
       .from("invitations")
       .select("*")
       .eq("invite_code", inviteCode)
-      .eq("status", "pending")
-      .gt("expires_at", new Date().toISOString())
       .single();
 
     if (inviteError || !invite) {
@@ -77,8 +74,24 @@ Deno.serve(async (req) => {
 
     if (profile?.company_id) {
       return new Response(
-        JSON.stringify({ error: "You are already part of a company" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ success: true, role: invite.role, already_member: true }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Block if invite is expired (pending only — accepted-by-same-user is handled as recovery below)
+    if (invite.status === "pending" && invite.expires_at && new Date(invite.expires_at) < new Date()) {
+      return new Response(
+        JSON.stringify({ error: "This invitation has expired" }),
+        { status: 410, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Block if invite was accepted by someone else
+    if (invite.status === "accepted" && invite.accepted_by !== userId) {
+      return new Response(
+        JSON.stringify({ error: "This invitation has already been used" }),
+        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 

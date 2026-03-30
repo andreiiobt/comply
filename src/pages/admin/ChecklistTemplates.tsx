@@ -491,7 +491,7 @@ export default function ChecklistTemplates() {
   function validateStep(s: number): string | null {
     if (s === 0 && !form.title.trim()) return "Title is required";
     if (s === 1 && form.items.filter((i) => i.text.trim()).length === 0) return "Add at least one item";
-    if (s === 2 && form.selectedLocationIds.length === 0 && form.selectedTagIds.length === 0) return "Select at least one location or tag";
+    if (s === 2 && form.selectedLocationIds.length === 0 && form.selectedTagIds.length === 0 && form.selectedCustomRoleIds.length === 0) return "Select at least one location, tag, or custom role";
     return null;
   }
 
@@ -843,6 +843,10 @@ export default function ChecklistTemplates() {
             {/* Step 2: Locations & Tags & Schedule */}
             {step === 2 && (
               <div className="space-y-5">
+                <div className="rounded-lg bg-muted/50 border border-border/60 px-3 py-2.5 text-xs text-muted-foreground leading-relaxed">
+                  Select locations, tags, or custom roles — or any combination. Each selection is independent: a staff member sees this checklist if they match <span className="font-medium text-foreground">any</span> of the selected criteria. To target only a specific role, select that role without choosing any locations.
+                </div>
+
                 {/* Assign by Tag */}
                 {locationTags.length > 0 && (
                   <div>
@@ -943,7 +947,7 @@ export default function ChecklistTemplates() {
                   <div>
                     <Label className="text-sm font-medium mb-2 block">Assign by Custom Role</Label>
                     <p className="text-xs text-muted-foreground mb-3">
-                      Only users with the selected custom roles will need to complete this checklist.
+                      Assigns this checklist to all users who hold the selected custom role, regardless of location. Use this without selecting locations above to restrict to that role only.
                     </p>
                     <div className="grid gap-2 sm:grid-cols-2">
                       {customRoles.map((role: any) => {

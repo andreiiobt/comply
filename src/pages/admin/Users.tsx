@@ -163,12 +163,23 @@ export default function AdminUsers() {
       }
       const { error } = await supabase.from("invitations").insert(insertData);
       if (error) throw error;
-      return code;
+
+      if (params.type === "email" && params.email) {
+        const { error: sendError } = await supabase.functions.invoke("send-invite-email", {
+          body: { inviteCode: code, email: params.email },
+        });
+        if (sendError) throw new Error(`Invite created but email failed to send: ${sendError.message}`);
+      }
+
+      return { code, type: params.type };
     },
-    onSuccess: (code) => {
+    onSuccess: ({ code, type }) => {
       const link = `${window.location.origin}/invite/${code}`;
       setGeneratedLink(link);
       queryClient.invalidateQueries({ queryKey: ["admin-invitations"] });
+      if (type === "email") {
+        toast.success("Invite email sent");
+      }
     },
     onError: (error: any) => toast.error(error.message),
   });

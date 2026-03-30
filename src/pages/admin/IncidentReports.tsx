@@ -9,6 +9,9 @@ import { AlertTriangle, MapPin, ArrowLeft, FileText, Clock, Search, ShieldAlert 
 import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
+import { incidentStatusConfig } from "@/lib/statusColors";
 
 export default function AdminIncidentReports() {
   const navigate = useNavigate();
@@ -112,7 +115,28 @@ export default function AdminIncidentReports() {
         </div>
 
         {isLoading ? (
-          <div className="p-8 text-center text-muted-foreground">Loading…</div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <Card key={i} className="rounded-2xl">
+                <CardContent className="p-6 space-y-3">
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-3 w-1/2" />
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <Skeleton className="h-3 w-full" />
+                    <Skeleton className="h-3 w-full" />
+                    <Skeleton className="h-3 w-full" />
+                    <Skeleton className="h-3 w-full" />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : locations.length === 0 ? (
+          <EmptyState
+            icon={MapPin}
+            title="No locations yet"
+            description="Add locations to start tracking incident reports by site."
+          />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {locations.map((loc) => {
@@ -267,7 +291,7 @@ export default function AdminIncidentReports() {
       <Card className="rounded-2xl">
         <CardContent className="p-0">
           {filteredReports.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">No incident reports found.</div>
+            <EmptyState inline icon={AlertTriangle} title="No incident reports found" description="Try adjusting the status filter." />
           ) : (
             <Table>
               <TableHeader>

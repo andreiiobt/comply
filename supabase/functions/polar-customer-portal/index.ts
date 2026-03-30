@@ -31,9 +31,8 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -61,11 +60,11 @@ Deno.serve(async (req) => {
 
     if (!company) throw new Error("Company not found");
 
-    // Unified Logic: Ensure customer exists in Polar and is linked to our external ID
-    // We'll first try to create the session with external_customer_id.
-    // If it fails with 404, we'll create the customer and then try again.
-    
-    const createSession = async (extId: string) => {
+    // Try to create a customer session via external_customer_id.
+    // Polar returns 422 (not 404) when the customer doesn't exist yet,
+    // so we handle both and create the customer on first use.
+
+    const createSessionByExternalId = async (extId: string) => {
       return await fetch(`${POLAR_API}/customer-sessions/`, {
         method: "POST",
         headers: {
@@ -76,10 +75,26 @@ Deno.serve(async (req) => {
       });
     };
 
-    let portalRes = await createSession(company_id);
-    
-    if (portalRes.status === 404) {
+    const createSessionByCustomerId = async (customerId: string) => {
+      return await fetch(`${POLAR_API}/customer-sessions/`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${POLAR_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ customer_id: customerId }),
+      });
+    };
+
+    let portalRes = await createSessionByExternalId(company_id);
+
+    // 404 or 422 both mean "customer not found" depending on Polar API version
+    if (portalRes.status === 404 || portalRes.status === 422) {
       console.log("Customer not found in Polar, creating one now...");
+
+      // Look up the user's email to use as the customer email
+      const { data: { user: adminUser } } = await adminClient.auth.admin.getUserById(user.id);
+
       const createRes = await fetch(`${POLAR_API}/customers/`, {
         method: "POST",
         headers: {
@@ -87,25 +102,41 @@ Deno.serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          email: `${company_id}@company.comply.app`, // Fallback email
+          email: adminUser?.email || `${company_id}@company.comply.app`,
           name: company.name,
           external_id: company_id,
         }),
       });
 
-      if (!createRes.ok) {
-        const err = await createRes.json();
+      let polarCustomerId: string;
+
+      if (createRes.ok) {
+        const newCustomer = await createRes.json();
+        polarCustomerId = newCustomer.id;
+      } else if (createRes.status === 422) {
+        // Customer already exists with this external_id — look them up
+        const lookupRes = await fetch(
+          `${POLAR_API}/customers/?external_id=${encodeURIComponent(company_id)}`,
+          { headers: { Authorization: `Bearer ${POLAR_ACCESS_TOKEN}` } }
+        );
+        const lookupData = await lookupRes.json();
+        if (!lookupRes.ok || !lookupData.items?.length) {
+          const err = await createRes.json().catch(() => ({}));
+          throw new Error(`Failed to create Polar customer: ${JSON.stringify(err)}`);
+        }
+        polarCustomerId = lookupData.items[0].id;
+      } else {
+        const err = await createRes.json().catch(() => ({}));
         throw new Error(`Failed to create Polar customer: ${JSON.stringify(err)}`);
       }
 
-      const newCustomer = await createRes.json();
+      // Store the customer ID and create session using it directly
       await adminClient
         .from("companies")
-        .update({ polar_customer_id: newCustomer.id })
+        .update({ polar_customer_id: polarCustomerId })
         .eq("id", company_id);
 
-      // Retry session creation
-      portalRes = await createSession(company_id);
+      portalRes = await createSessionByCustomerId(polarCustomerId);
     }
 
     const portalData = await portalRes.json();

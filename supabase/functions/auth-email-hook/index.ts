@@ -35,9 +35,9 @@ const EMAIL_TEMPLATES: Record<string, React.ComponentType<any>> = {
 
 // Configuration — update these to your domain
 const SITE_NAME = "COMPLY"
-const SENDER_DOMAIN = "email.comply.iobt.com.au"
+const SENDER_DOMAIN = "appemail.iobt.com.au"
 const ROOT_DOMAIN = "comply.iobt.com.au"
-const FROM_DOMAIN = "comply.iobt.com.au"
+const FROM_DOMAIN = "appemail.iobt.com.au"
 
 // Sample data for preview mode
 const SAMPLE_PROJECT_URL = `https://${ROOT_DOMAIN}`
@@ -207,12 +207,15 @@ async function handleAuthHook(req: Request): Promise<Response> {
     )
   }
 
-  // Build the confirmation URL from token data
-  const siteUrl = emailData.site_url || `https://${ROOT_DOMAIN}`
+  // Build the confirmation URL from token data.
+  // Always use SUPABASE_URL (the actual auth server) for the verify endpoint —
+  // NOT emailData.site_url which is the frontend domain and would 404.
+  const supabaseAuthUrl = Deno.env.get('SUPABASE_URL')!
+  const siteUrl = `https://${ROOT_DOMAIN}`
   const redirectTo = emailData.redirect_to || siteUrl
   const tokenHash = emailData.token_hash || ''
   const confirmationUrl = tokenHash
-    ? `${siteUrl}/auth/v1/verify?token=${tokenHash}&type=${emailType}&redirect_to=${encodeURIComponent(redirectTo)}`
+    ? `${supabaseAuthUrl}/auth/v1/verify?token=${tokenHash}&type=${emailType}&redirect_to=${encodeURIComponent(redirectTo)}`
     : emailData.url || redirectTo
 
   // Build template props
@@ -226,13 +229,9 @@ async function handleAuthHook(req: Request): Promise<Response> {
     newEmail: emailData.new_email,
   }
 
-  // Render React Email to HTML and plain text
+  // Render HTML only (plain text skipped to stay within the 5s hook timeout)
   const html = await renderAsync(React.createElement(EmailTemplate, templateProps))
-  const text = await renderAsync(React.createElement(EmailTemplate, templateProps), {
-    plainText: true,
-  })
 
-  // Enqueue email for async processing by the dispatcher (process-email-queue).
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -240,66 +239,40 @@ async function handleAuthHook(req: Request): Promise<Response> {
 
   const messageId = crypto.randomUUID()
 
-  // Log pending BEFORE enqueue so we have a record even if enqueue crashes
-  await supabase.from('email_send_log').insert({
+  try {
+    await sendViaResend(
+      resendApiKey,
+      recipientEmail,
+      `${SITE_NAME} <noreply@${FROM_DOMAIN}>`,
+      EMAIL_SUBJECTS[emailType] || 'Notification',
+      html,
+      undefined,
+    )
+  } catch (sendError) {
+    console.error('Failed to send auth email via Resend', { error: sendError, emailType })
+    // Fire-and-forget the log so we don't delay the error response
+    supabase.from('email_send_log').insert({
+      message_id: messageId,
+      template_name: emailType,
+      recipient_email: recipientEmail,
+      status: 'failed',
+      error_message: sendError instanceof Error ? sendError.message : 'Unknown send error',
+    })
+    return new Response(JSON.stringify({ error: 'Failed to send email' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
+  // Fire-and-forget the success log — don't block the response on a DB write
+  supabase.from('email_send_log').insert({
     message_id: messageId,
     template_name: emailType,
     recipient_email: recipientEmail,
-    status: 'pending',
+    status: 'sent',
   })
 
-  const { error: enqueueError } = await supabase.rpc('enqueue_email', {
-    queue_name: 'auth_emails',
-    payload: {
-      message_id: messageId,
-      to: recipientEmail,
-      from: `${SITE_NAME} <noreply@${FROM_DOMAIN}>`,
-      sender_domain: SENDER_DOMAIN,
-      subject: EMAIL_SUBJECTS[emailType] || 'Notification',
-      html,
-      text,
-      purpose: 'transactional',
-      label: emailType,
-      queued_at: new Date().toISOString(),
-    },
-  })
-
-  if (enqueueError) {
-    console.error('Failed to enqueue auth email', { error: enqueueError, emailType })
-
-    // Fallback: try sending directly via Resend
-    try {
-      await sendViaResend(
-        resendApiKey,
-        recipientEmail,
-        `${SITE_NAME} <noreply@${FROM_DOMAIN}>`,
-        EMAIL_SUBJECTS[emailType] || 'Notification',
-        html,
-        text,
-      )
-      await supabase.from('email_send_log').insert({
-        message_id: messageId,
-        template_name: emailType,
-        recipient_email: recipientEmail,
-        status: 'sent',
-      })
-    } catch (sendError) {
-      console.error('Direct send also failed', { error: sendError })
-      await supabase.from('email_send_log').insert({
-        message_id: messageId,
-        template_name: emailType,
-        recipient_email: recipientEmail,
-        status: 'failed',
-        error_message: 'Failed to enqueue and direct send',
-      })
-      return new Response(JSON.stringify({ error: 'Failed to send email' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-  }
-
-  console.log('Auth email processed', { emailType, email: recipientEmail })
+  console.log('Auth email sent', { emailType, email: recipientEmail })
 
   return new Response(
     JSON.stringify({ success: true }),
