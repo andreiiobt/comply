@@ -170,8 +170,8 @@ export default function ChecklistTemplates() {
         .filter((i) => i.text);
       if (!form.title.trim()) throw new Error("Title is required");
       if (cleanItems.length === 0) throw new Error("Add at least one checklist item");
-      if (form.selectedLocationIds.length === 0 && form.selectedTagIds.length === 0 && form.selectedCustomRoleIds.length === 0)
-        throw new Error("Select at least one location, tag, or custom role");
+      if (form.selectedCustomRoleIds.length === 0)
+        throw new Error("Select at least one custom role");
 
       const payload = {
         title: form.title.trim(),
@@ -491,7 +491,7 @@ export default function ChecklistTemplates() {
   function validateStep(s: number): string | null {
     if (s === 0 && !form.title.trim()) return "Title is required";
     if (s === 1 && form.items.filter((i) => i.text.trim()).length === 0) return "Add at least one item";
-    if (s === 2 && form.selectedLocationIds.length === 0 && form.selectedTagIds.length === 0 && form.selectedCustomRoleIds.length === 0) return "Select at least one location, tag, or custom role";
+    if (s === 2 && form.selectedCustomRoleIds.length === 0) return "Select at least one custom role";
     return null;
   }
 
@@ -844,7 +844,7 @@ export default function ChecklistTemplates() {
             {step === 2 && (
               <div className="space-y-5">
                 <div className="rounded-lg bg-muted/50 border border-border/60 px-3 py-2.5 text-xs text-muted-foreground leading-relaxed">
-                  Select locations, tags, or custom roles — or any combination. Each selection is independent: a staff member sees this checklist if they match <span className="font-medium text-foreground">any</span> of the selected criteria. To target only a specific role, select that role without choosing any locations.
+                  <span className="font-medium text-foreground">Custom role is required.</span> Locations and tags are optional — use them to also push the checklist to all staff at those locations regardless of role. When both are set, staff see the checklist if they match <span className="font-medium text-foreground">any</span> of the criteria.
                 </div>
 
                 {/* Assign by Tag */}

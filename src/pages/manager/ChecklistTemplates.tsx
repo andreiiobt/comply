@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -17,7 +18,10 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, X, ClipboardList, ChevronUp, ChevronDown, Tag, Camera, Check, ListChecks, Archive, RotateCcw } from "lucide-react";
+import {
+  Plus, Pencil, X, ClipboardList, ChevronUp, ChevronDown, Tag, Camera,
+  Check, ListChecks, Archive, RotateCcw, UserCheck, MapPin,
+} from "lucide-react";
 import { type ChecklistItem, normalizeItems } from "@/lib/checklist-utils";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -43,11 +47,13 @@ const emptyForm = {
   title: "", description: "", category: "",
   items: [{ text: "", requires_photo: false }] as FormItem[],
   is_published: false,
+  selectedCustomRoleIds: [] as string[],
 };
 
 const STEPS = [
   { label: "Details", icon: ClipboardList },
   { label: "Items", icon: ListChecks },
+  { label: "Assignment", icon: UserCheck },
 ];
 
 export default function ManagerChecklistTemplates() {
@@ -60,8 +66,9 @@ export default function ManagerChecklistTemplates() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [step, setStep] = useState(0);
+  const [showArchived, setShowArchived] = useState(false);
 
-  const { data: managerLocations = [] } = useQuery({
+  const { data: managerLocationIds = [] } = useQuery({
     queryKey: ["manager-locations", profile?.user_id],
     queryFn: async () => {
       const { data } = await supabase
@@ -83,71 +90,57 @@ export default function ManagerChecklistTemplates() {
     enabled: !!companyId,
   });
 
-  const managerLocationNames = useMemo(() => {
-    return locations.filter((l) => managerLocations.includes(l.id));
-  }, [locations, managerLocations]);
+  const managerLocationNames = useMemo(
+    () => locations.filter((l) => managerLocationIds.includes(l.id)),
+    [locations, managerLocationIds]
+  );
 
-  const { data: locationTags = [] } = useQuery({
-    queryKey: ["location-tags", companyId],
+  const { data: customRoles = [] } = useQuery({
+    queryKey: ["custom-roles", companyId],
     queryFn: async () => {
-      const { data } = await supabase.from("location_tags").select("*").order("name");
+      const { data } = await supabase.from("custom_roles").select("id, name").order("name");
       return data || [];
     },
     enabled: !!companyId,
   });
 
-  const { data: tagAssignments = [] } = useQuery({
-    queryKey: ["location-tag-assignments", companyId],
+  const { data: allAssignments = [] } = useQuery({
+    queryKey: ["checklist-assignments-manager", companyId],
     queryFn: async () => {
-      const { data } = await supabase.from("location_tag_assignments").select("*");
+      const { data } = await supabase.from("checklist_assignments").select("*");
       return data || [];
     },
     enabled: !!companyId,
   });
 
-  // Tags that apply to manager's locations
-  const managerTagIds = useMemo(() => {
-    const ids = new Set<string>();
-    tagAssignments.forEach((ta: any) => {
-      if (managerLocations.includes(ta.location_id)) ids.add(ta.tag_id);
-    });
-    return [...ids];
-  }, [tagAssignments, managerLocations]);
-
-  const tagMap = useMemo(() => {
-    const m: Record<string, any> = {};
-    locationTags.forEach((t: any) => { m[t.id] = t; });
-    return m;
-  }, [locationTags]);
-
-  const [showArchived, setShowArchived] = useState(false);
-
+  // Templates visible to this manager:
+  // - assigned to their location(s) directly, OR
+  // - assigned via custom_role (company-wide role assignments)
   const { data: templates = [], isLoading } = useQuery({
-    queryKey: ["checklist-templates", companyId, managerLocations, managerTagIds, showArchived],
+    queryKey: ["checklist-templates-manager", companyId, managerLocationIds, showArchived],
     queryFn: async () => {
-      if (managerLocations.length === 0) return [] as Template[];
+      if (!companyId) return [] as Template[];
 
-      // Get assignments for manager's locations AND tags
-      const { data: locAssignments } = await supabase
+      const { data: locAssignments } = managerLocationIds.length > 0
+        ? await supabase
+            .from("checklist_assignments")
+            .select("template_id")
+            .eq("assign_type", "location")
+            .in("assign_value", managerLocationIds)
+        : { data: [] };
+
+      const { data: roleAssignments } = await supabase
         .from("checklist_assignments")
         .select("template_id")
-        .eq("assign_type", "location")
-        .in("assign_value", managerLocations);
+        .eq("assign_type", "custom_role");
 
-      const tagTemplateIds: string[] = [];
-      if (managerTagIds.length > 0) {
-        const { data: tagAssigns } = await supabase
-          .from("checklist_assignments")
-          .select("template_id")
-          .eq("assign_type", "location_tag")
-          .in("assign_value", managerTagIds);
-        (tagAssigns || []).forEach((a: any) => tagTemplateIds.push(a.template_id));
-      }
+      const assignedIds = [
+        ...new Set([
+          ...(locAssignments || []).map((a: any) => a.template_id),
+          ...(roleAssignments || []).map((a: any) => a.template_id),
+        ]),
+      ];
 
-      const assignedIds = [...new Set([
-        ...(locAssignments || []).map((a: any) => a.template_id),
-        ...tagTemplateIds,
-      ])];
       if (assignedIds.length === 0) return [] as Template[];
 
       const { data, error } = await supabase
@@ -162,22 +155,13 @@ export default function ManagerChecklistTemplates() {
         items: normalizeItems(t.items),
       })) as Template[];
     },
-    enabled: !!companyId && managerLocations.length > 0,
-  });
-
-  const { data: allAssignments = [] } = useQuery({
-    queryKey: ["checklist-assignments-manager", companyId],
-    queryFn: async () => {
-      const { data } = await supabase.from("checklist_assignments").select("*");
-      return data || [];
-    },
     enabled: !!companyId,
   });
 
-  const templateTagMap = useMemo(() => {
+  const templateCustomRoleMap = useMemo(() => {
     const m: Record<string, string[]> = {};
     allAssignments.forEach((a: any) => {
-      if (a.assign_type === "location_tag" && a.assign_value) {
+      if (a.assign_type === "custom_role" && a.assign_value) {
         if (!m[a.template_id]) m[a.template_id] = [];
         if (!m[a.template_id].includes(a.assign_value)) m[a.template_id].push(a.assign_value);
       }
@@ -192,6 +176,8 @@ export default function ManagerChecklistTemplates() {
         .filter((i) => i.text);
       if (!form.title.trim()) throw new Error("Title is required");
       if (cleanItems.length === 0) throw new Error("Add at least one checklist item");
+      if (form.selectedCustomRoleIds.length === 0)
+        throw new Error("Select at least one custom role");
 
       const payload = {
         title: form.title.trim(),
@@ -235,20 +221,34 @@ export default function ManagerChecklistTemplates() {
         } as any);
       }
 
-      if (templateId && managerLocations.length > 0) {
+      if (templateId) {
         await supabase.from("checklist_assignments").delete().eq("template_id", templateId);
-        const assignRows = managerLocations.map((locId: string) => ({
-          template_id: templateId!,
-          company_id: companyId!,
-          assign_type: "location",
-          assign_value: locId,
-        }));
-        const { error } = await supabase.from("checklist_assignments").insert(assignRows);
-        if (error) throw error;
+
+        // Only write custom_role assignments — writing location assignments too would
+        // expose the checklist to ALL staff at those locations (OR logic in RLS),
+        // bypassing the role filter entirely.
+        const assignRows = form.selectedCustomRoleIds
+          .map((roleId) => {
+            const roleName = customRoles.find((r: any) => r.id === roleId)?.name;
+            if (!roleName) return null;
+            return {
+              template_id: templateId!,
+              company_id: companyId!,
+              assign_type: "custom_role",
+              assign_value: roleName,
+            };
+          })
+          .filter(Boolean);
+
+        if (assignRows.length > 0) {
+          const { error } = await supabase.from("checklist_assignments").insert(assignRows);
+          if (error) throw error;
+        }
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["checklist-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["checklist-templates-manager"] });
+      queryClient.invalidateQueries({ queryKey: ["checklist-assignments-manager"] });
       queryClient.invalidateQueries({ queryKey: ["template-versions"] });
       toast({ title: editingId ? "Template updated" : "Template created" });
       closeDialog();
@@ -262,7 +262,7 @@ export default function ManagerChecklistTemplates() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["checklist-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["checklist-templates-manager"] });
       toast({ title: "Template archived" });
       setDeleteId(null);
     },
@@ -275,7 +275,7 @@ export default function ManagerChecklistTemplates() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["checklist-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["checklist-templates-manager"] });
       toast({ title: "Template restored" });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -302,13 +302,24 @@ export default function ManagerChecklistTemplates() {
   }
 
   function openEdit(t: Template) {
+    const tplAssignments = allAssignments.filter((a: any) => a.template_id === t.id);
+    const customRoleNames = tplAssignments
+      .filter((a: any) => a.assign_type === "custom_role" && a.assign_value)
+      .map((a: any) => a.assign_value as string);
+    const customRoleIds = customRoles
+      .filter((r: any) => customRoleNames.includes(r.name))
+      .map((r: any) => r.id);
+
     setEditingId(t.id);
     setForm({
       title: t.title,
       description: t.description ?? "",
       category: t.category ?? "",
-      items: t.items.length > 0 ? t.items.map((i) => ({ text: i.text, requires_photo: i.requires_photo })) : [{ text: "", requires_photo: false }],
+      items: t.items.length > 0
+        ? t.items.map((i) => ({ text: i.text, requires_photo: i.requires_photo }))
+        : [{ text: "", requires_photo: false }],
       is_published: t.is_published,
+      selectedCustomRoleIds: customRoleIds,
     });
     setStep(0);
     setDialogOpen(true);
@@ -346,6 +357,7 @@ export default function ManagerChecklistTemplates() {
   function validateStep(s: number): string | null {
     if (s === 0 && !form.title.trim()) return "Title is required";
     if (s === 1 && form.items.filter((i) => i.text.trim()).length === 0) return "Add at least one item";
+    if (s === 2 && form.selectedCustomRoleIds.length === 0) return "Select at least one custom role";
     return null;
   }
 
@@ -370,7 +382,8 @@ export default function ManagerChecklistTemplates() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Checklist Templates</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Create checklists for your location{managerLocationNames.length > 0 ? ` (${managerLocationNames.map((l) => l.name).join(", ")})` : ""}.
+            Create checklists for your team
+            {managerLocationNames.length > 0 ? ` at ${managerLocationNames.map((l) => l.name).join(", ")}` : ""}.
           </p>
         </div>
         <Button onClick={openCreate} className="gap-2">
@@ -386,80 +399,77 @@ export default function ManagerChecklistTemplates() {
         </TabsList>
 
         <TabsContent value="my-templates" className="space-y-0 mt-4">
-      {isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2">
-          {[1, 2].map((i) => (
-            <Card key={i} className="animate-pulse">
-              <CardHeader><div className="h-5 bg-muted rounded w-2/3" /></CardHeader>
+          {isLoading ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              {[1, 2].map((i) => (
+                <Card key={i} className="animate-pulse">
+                  <CardHeader><div className="h-5 bg-muted rounded w-2/3" /></CardHeader>
+                </Card>
+              ))}
+            </div>
+          ) : templates.length === 0 ? (
+            <Card className="-dashed">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <ClipboardList className="h-10 w-10 text-muted-foreground/50 mb-3" />
+                <p className="text-muted-foreground font-medium">No templates yet</p>
+                <Button onClick={openCreate} variant="outline" className="mt-4 gap-2">
+                  <Plus className="h-4 w-4" /> New Template
+                </Button>
+              </CardContent>
             </Card>
-          ))}
-        </div>
-      ) : templates.length === 0 ? (
-        <Card className="-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <ClipboardList className="h-10 w-10 text-muted-foreground/50 mb-3" />
-            <p className="text-muted-foreground font-medium">No templates yet</p>
-            <Button onClick={openCreate} variant="outline" className="mt-4 gap-2">
-              <Plus className="h-4 w-4" /> New Template
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {templates.map((t) => {
-            const photoCount = t.items.filter((i) => i.requires_photo).length;
-            return (
-              <Card key={t.id} className="transition-shadow ">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="text-base leading-snug">{t.title}</CardTitle>
-                    <Badge variant={t.is_published ? "default" : "secondary"} className="shrink-0 text-[10px]">
-                      {t.is_published ? "Published" : "Draft"}
-                    </Badge>
-                  </div>
-                  {t.description && <CardDescription className="line-clamp-2 text-xs">{t.description}</CardDescription>}
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-muted-foreground">{t.items.length} items</span>
-                    {photoCount > 0 && (
-                      <span className="text-xs text-muted-foreground flex items-center gap-0.5">
-                        <Camera className="h-3 w-3" /> {photoCount}
-                      </span>
-                    )}
-                    {t.category && <Badge variant="outline" className="text-[10px] gap-1"><Tag className="h-2.5 w-2.5" />{t.category}</Badge>}
-                  </div>
-                  {(templateTagMap[t.id] || []).length > 0 && (
-                    <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                      {(templateTagMap[t.id] || []).map((tagId) => {
-                        const tag = tagMap[tagId];
-                        return tag ? (
-                          <Badge
-                            key={tagId}
-                            variant="outline"
-                            className="text-[10px] gap-0.5"
-                            style={{ borderColor: tag.color || undefined, color: tag.color || undefined }}
-                          >
-                            <Tag className="h-2.5 w-2.5" /> {tag.name}
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {templates.map((t) => {
+                const photoCount = t.items.filter((i) => i.requires_photo).length;
+                const tplCustomRoles = templateCustomRoleMap[t.id] || [];
+                return (
+                  <Card key={t.id} className="transition-shadow">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <CardTitle className="text-base leading-snug">{t.title}</CardTitle>
+                        <Badge variant={t.is_published ? "default" : "secondary"} className="shrink-0 text-[10px]">
+                          {t.is_published ? "Published" : "Draft"}
+                        </Badge>
+                      </div>
+                      {t.description && <CardDescription className="line-clamp-2 text-xs">{t.description}</CardDescription>}
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-muted-foreground">{t.items.length} items</span>
+                        {photoCount > 0 && (
+                          <span className="text-xs text-muted-foreground flex items-center gap-0.5">
+                            <Camera className="h-3 w-3" /> {photoCount}
+                          </span>
+                        )}
+                        {t.category && (
+                          <Badge variant="outline" className="text-[10px] gap-1">
+                            <Tag className="h-2.5 w-2.5" /> {t.category}
                           </Badge>
-                        ) : null;
-                      })}
-                    </div>
-                  )}
-                  <div className="flex gap-1 mt-3">
-                    <Button size="sm" variant="ghost" className="h-8 gap-1.5" onClick={() => openEdit(t)}>
-                      <Pencil className="h-3.5 w-3.5" /> Edit
-                    </Button>
-                    <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => setDeleteId(t.id)}>
-                      <Archive className="h-3.5 w-3.5" /> Archive
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+                        )}
+                      </div>
+                      {tplCustomRoles.length > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                          {tplCustomRoles.map((roleName) => (
+                            <Badge key={roleName} variant="outline" className="text-[10px] gap-1 border-violet-400 text-violet-600">
+                              <UserCheck className="h-2.5 w-2.5" /> {roleName}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex gap-1 mt-3">
+                        <Button size="sm" variant="ghost" className="h-8 gap-1.5" onClick={() => openEdit(t)}>
+                          <Pencil className="h-3.5 w-3.5" /> Edit
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => setDeleteId(t.id)}>
+                          <Archive className="h-3.5 w-3.5" /> Archive
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="archived" className="space-y-0 mt-4">
@@ -482,7 +492,7 @@ export default function ManagerChecklistTemplates() {
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
               {templates.map((t) => (
-                <Card key={t.id} className="opacity-75 transition-shadow ">
+                <Card key={t.id} className="opacity-75 transition-shadow">
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between gap-2">
                       <CardTitle className="text-base leading-snug">{t.title}</CardTitle>
@@ -541,11 +551,7 @@ export default function ManagerChecklistTemplates() {
                       !isActive && !isComplete && "text-muted-foreground hover:bg-muted"
                     )}
                   >
-                    {isComplete ? (
-                      <Check className="h-4 w-4" />
-                    ) : (
-                      <Icon className="h-4 w-4" />
-                    )}
+                    {isComplete ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
                     <span className="hidden sm:inline">{s.label}</span>
                     {i === 1 && filledItemCount > 0 && (
                       <Badge variant={isActive ? "secondary" : "outline"} className="text-[10px] h-5 px-1.5 ml-0.5">
@@ -560,6 +566,7 @@ export default function ManagerChecklistTemplates() {
 
           {/* Step Content */}
           <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+
             {/* Step 0: Details */}
             {step === 0 && (
               <div className="space-y-5">
@@ -572,16 +579,30 @@ export default function ManagerChecklistTemplates() {
                     </Label>
                   </div>
                 </div>
-                <Input id="tpl-title" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="e.g. Opening Checklist" className="text-base h-11" />
-
+                <Input
+                  id="tpl-title"
+                  value={form.title}
+                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                  placeholder="e.g. Opening Checklist"
+                  className="text-base h-11"
+                />
                 <div className="space-y-2">
                   <Label htmlFor="tpl-desc">Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                  <Textarea id="tpl-desc" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} />
+                  <Textarea
+                    id="tpl-desc"
+                    value={form.description}
+                    onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                    rows={3}
+                  />
                 </div>
-
                 <div className="space-y-2">
                   <Label htmlFor="tpl-category">Category <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                  <Input id="tpl-category" value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} placeholder="e.g. Kitchen, Safety" />
+                  <Input
+                    id="tpl-category"
+                    value={form.category}
+                    onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                    placeholder="e.g. Kitchen, Safety"
+                  />
                 </div>
               </div>
             )}
@@ -602,7 +623,12 @@ export default function ManagerChecklistTemplates() {
                           <ChevronDown className="h-3 w-3" />
                         </Button>
                       </div>
-                      <Input value={item.text} onChange={(e) => updateItemText(idx, e.target.value)} placeholder={`Item ${idx + 1}`} className="flex-1" />
+                      <Input
+                        value={item.text}
+                        onChange={(e) => updateItemText(idx, e.target.value)}
+                        placeholder={`Item ${idx + 1}`}
+                        className="flex-1"
+                      />
                       <Button
                         type="button"
                         size="icon"
@@ -626,6 +652,80 @@ export default function ManagerChecklistTemplates() {
                 </Button>
               </div>
             )}
+
+            {/* Step 2: Assignment */}
+            {step === 2 && (
+              <div className="space-y-5">
+                <div className="rounded-lg bg-muted/50 border border-border/60 px-3 py-2.5 text-xs text-muted-foreground leading-relaxed">
+                  Select which custom roles should complete this checklist. Only staff with the selected role(s) will see it — regardless of location.
+                </div>
+
+                {/* Manager's locations — informational, auto-applied */}
+                {managerLocationNames.length > 0 && (
+                  <div>
+                    <Label className="text-sm font-medium mb-2 block">Your Location(s)</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {managerLocationNames.map((loc) => (
+                        <Badge key={loc.id} variant="outline" className="gap-1 text-xs">
+                          <MapPin className="h-3 w-3" /> {loc.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Custom Role selection — required */}
+                <div>
+                  <Label className="text-sm font-medium mb-1 block">
+                    Custom Role <span className="text-destructive">*</span>
+                  </Label>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Choose which roles must complete this checklist.
+                  </p>
+
+                  {customRoles.length === 0 ? (
+                    <Card className="-dashed">
+                      <CardContent className="flex flex-col items-center py-8 text-center">
+                        <UserCheck className="h-8 w-8 text-muted-foreground/40 mb-2" />
+                        <p className="text-sm text-muted-foreground">No custom roles found.</p>
+                        <p className="text-xs text-muted-foreground mt-1">Ask an admin to create custom roles first.</p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {customRoles.map((role: any) => {
+                        const isSelected = form.selectedCustomRoleIds.includes(role.id);
+                        return (
+                          <label
+                            key={role.id}
+                            className={cn(
+                              "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
+                              isSelected ? "border-violet-400 bg-violet-50 dark:bg-violet-950/20" : "border-border hover:bg-muted/50"
+                            )}
+                          >
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() =>
+                                setForm((f) => ({
+                                  ...f,
+                                  selectedCustomRoleIds: isSelected
+                                    ? f.selectedCustomRoleIds.filter((id) => id !== role.id)
+                                    : [...f.selectedCustomRoleIds, role.id],
+                                }))
+                              }
+                            />
+                            <div className="flex items-center gap-2">
+                              <UserCheck className={cn("h-4 w-4 shrink-0", isSelected ? "text-violet-600" : "text-muted-foreground")} />
+                              <span className="text-sm font-medium">{role.name}</span>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Footer */}
@@ -640,7 +740,7 @@ export default function ManagerChecklistTemplates() {
               {step < STEPS.length - 1 ? (
                 <Button onClick={goNext}>Next</Button>
               ) : (
-                <Button onClick={() => upsert.mutate()} disabled={upsert.isPending}>
+                <Button onClick={() => upsert.mutate()} disabled={upsert.isPending || customRoles.length === 0}>
                   {upsert.isPending ? "Saving…" : editingId ? "Save Changes" : "Create Template"}
                 </Button>
               )}
