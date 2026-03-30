@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import {
@@ -591,54 +591,54 @@ export default function ManagerStaff() {
         })}
       </div>
 
-      {/* Edit Custom Roles Dialog */}
+      {/* Edit User Profile Dialog */}
       <Dialog open={!!editRolesFor} onOpenChange={(o) => !o && setEditRolesFor(null)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-md rounded-2xl">
           <DialogHeader>
-            <DialogTitle>Edit Custom Roles</DialogTitle>
+            <DialogTitle className="font-display">Edit User Profile</DialogTitle>
             <DialogDescription>
-              Assign custom roles for{" "}
-              <span className="font-medium text-foreground">
-                {editRolesFor?.full_name || "this staff member"}
-              </span>
-              .
+              Update system details for {editRolesFor?.full_name || "this staff member"}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-2">
+          <div className="space-y-4 py-2">
             {allCustomRoles.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">
                 No custom roles defined for your company.
               </p>
             ) : (
-              allCustomRoles.map((role: any) => {
-                const isSelected = editRoleIds.includes(role.id);
-                return (
-                  <label
-                    key={role.id}
-                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                      isSelected
-                        ? "border-violet-400 bg-violet-50 dark:bg-violet-950/20"
-                        : "border-border hover:bg-muted/50"
-                    }`}
-                  >
-                    <Checkbox
-                      checked={isSelected}
-                      onCheckedChange={(checked) => {
-                        setEditRoleIds((prev) =>
-                          checked
-                            ? [...prev, role.id]
-                            : prev.filter((id) => id !== role.id)
-                        );
-                      }}
-                    />
-                    <span className="text-sm font-medium">{role.name}</span>
-                  </label>
-                );
-              })
+              <div className="space-y-2">
+                <Label>Custom Roles</Label>
+                <div className="flex flex-wrap gap-2 p-3 rounded-xl border bg-muted/20">
+                  {allCustomRoles.map((role: any) => {
+                    const isSelected = editRoleIds.includes(role.id);
+                    return (
+                      <button
+                        key={role.id}
+                        type="button"
+                        onClick={() =>
+                          setEditRoleIds((prev) =>
+                            isSelected
+                              ? prev.filter((id) => id !== role.id)
+                              : [...prev, role.id]
+                          )
+                        }
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                          isSelected
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        }`}
+                      >
+                        <Tag className="h-3 w-3" />
+                        {role.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditRolesFor(null)}>
+            <Button variant="outline" onClick={() => setEditRolesFor(null)} className="rounded-xl">
               Cancel
             </Button>
             <Button
@@ -649,8 +649,9 @@ export default function ManagerStaff() {
                 })
               }
               disabled={editRolesMutation.isPending}
+              className="rounded-xl"
             >
-              {editRolesMutation.isPending ? "Saving..." : "Save"}
+              {editRolesMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
