@@ -219,35 +219,7 @@ export default function ChecklistTemplates() {
         await supabase.from("checklist_assignments").delete().eq("template_id", templateId);
         const assignRows: any[] = [];
 
-        // Location assignments
-        form.selectedLocationIds.forEach((locId) => {
-          assignRows.push({
-            template_id: templateId!,
-            company_id: companyId!,
-            assign_type: "location",
-            assign_value: locId,
-            due_date: form.schedule.due_date || null,
-            recurrence_type: form.schedule.recurrence_type || "none",
-            recurrence_days: form.schedule.recurrence_days.length > 0 ? form.schedule.recurrence_days : null,
-            recurrence_time: form.schedule.recurrence_time || "09:00",
-          });
-        });
-
-        // Tag assignments
-        form.selectedTagIds.forEach((tagId) => {
-          assignRows.push({
-            template_id: templateId!,
-            company_id: companyId!,
-            assign_type: "location_tag",
-            assign_value: tagId,
-            due_date: form.schedule.due_date || null,
-            recurrence_type: form.schedule.recurrence_type || "none",
-            recurrence_days: form.schedule.recurrence_days.length > 0 ? form.schedule.recurrence_days : null,
-            recurrence_time: form.schedule.recurrence_time || "09:00",
-          });
-        });
-
-        // Custom role assignments
+        // Custom role assignments (role-only: no location/tag rows to preserve role filtering)
         form.selectedCustomRoleIds.forEach((roleId) => {
           const roleName = customRoles.find((r: any) => r.id === roleId)?.name;
           if (roleName) {
@@ -840,106 +812,11 @@ export default function ChecklistTemplates() {
               </div>
             )}
 
-            {/* Step 2: Locations & Tags & Schedule */}
+            {/* Step 2: Custom Roles & Schedule */}
             {step === 2 && (
               <div className="space-y-5">
                 <div className="rounded-lg bg-muted/50 border border-border/60 px-3 py-2.5 text-xs text-muted-foreground leading-relaxed">
-                  <span className="font-medium text-foreground">Custom role is required.</span> Locations and tags are optional — use them to also push the checklist to all staff at those locations regardless of role. When both are set, staff see the checklist if they match <span className="font-medium text-foreground">any</span> of the criteria.
-                </div>
-
-                {/* Assign by Tag */}
-                {locationTags.length > 0 && (
-                  <div>
-                    <Label className="text-sm font-medium mb-2 block">Assign by Tag</Label>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Selecting a tag will assign this checklist to all locations with that tag.
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {locationTags.map((tag: any) => {
-                        const isSelected = form.selectedTagIds.includes(tag.id);
-                        const tagLocCount = (tagToLocations[tag.id] || []).length;
-                        return (
-                          <button
-                            key={tag.id}
-                            type="button"
-                            onClick={() => toggleTag(tag.id)}
-                            className={cn(
-                              "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
-                              isSelected
-                                ? "border-primary bg-primary/10 text-primary"
-                                : "border-border text-muted-foreground hover:bg-muted/50"
-                            )}
-                            style={isSelected ? { borderColor: tag.color || undefined, color: tag.color || undefined, backgroundColor: `${tag.color}15` } : { borderColor: tag.color || undefined, color: tag.color || undefined }}
-                          >
-                            <Tag className="h-3 w-3" />
-                            {tag.name}
-                            <span className="text-[10px] opacity-70">({tagLocCount})</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Individual Locations */}
-                <div>
-                  <Label className="text-sm font-medium mb-2 block">Assign by Location</Label>
-                  <p className="text-xs text-muted-foreground mb-3">Select individual locations, or use tags above to select groups.</p>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="text-xs"
-                      onClick={() => setForm((f) => ({ ...f, selectedLocationIds: locations.map((l) => l.id) }))}
-                    >
-                      Select All
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="text-xs"
-                      onClick={() => setForm((f) => ({ ...f, selectedLocationIds: [], selectedTagIds: [] }))}
-                    >
-                      Deselect All
-                    </Button>
-                    <span className="text-xs text-muted-foreground ml-auto">
-                      {form.selectedLocationIds.length} of {locations.length} selected
-                    </span>
-                  </div>
-                  {locations.length === 0 ? (
-                    <Card className="-dashed">
-                      <CardContent className="flex flex-col items-center py-8 text-center">
-                        <MapPin className="h-8 w-8 text-muted-foreground/40 mb-2" />
-                        <p className="text-sm text-muted-foreground">No locations found. Add locations first.</p>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {locations.map((loc) => {
-                        const isSelected = form.selectedLocationIds.includes(loc.id);
-                        return (
-                          <label
-                            key={loc.id}
-                            className={cn(
-                              "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
-                              isSelected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
-                            )}
-                          >
-                            <Checkbox
-                              checked={isSelected}
-                              onCheckedChange={() => toggleLocation(loc.id)}
-                            />
-                            <div className="flex items-center gap-2">
-                              <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
-                              <span className="text-sm font-medium">{loc.name}</span>
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
+                  <span className="font-medium text-foreground">Select at least one custom role.</span> This checklist will only appear for staff who hold the selected role, ensuring precise filtering regardless of location.
                 </div>
 
                 {/* Assign by Custom Role */}
