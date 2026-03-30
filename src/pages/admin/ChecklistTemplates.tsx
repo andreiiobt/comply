@@ -396,7 +396,7 @@ export default function ChecklistTemplates() {
   }
 
   const [filterCategory, setFilterCategory] = useState("all");
-  const [filterLocationId, setFilterLocationId] = useState("all");
+  const [filterRoleName, setFilterRoleName] = useState("all");
 
   const locationMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -452,13 +452,13 @@ export default function ChecklistTemplates() {
   const filteredTemplates = useMemo(() => {
     return templates.filter((t) => {
       if (filterCategory !== "all" && t.category !== filterCategory) return false;
-      if (filterLocationId !== "all") {
-        const locs = templateLocationMap[t.id] || [];
-        if (!locs.includes(filterLocationId)) return false;
+      if (filterRoleName !== "all") {
+        const roles = templateCustomRoleMap[t.id] || [];
+        if (!roles.includes(filterRoleName)) return false;
       }
       return true;
     });
-  }, [templates, filterCategory, filterLocationId, templateLocationMap]);
+  }, [templates, filterCategory, filterRoleName, templateCustomRoleMap]);
 
   function validateStep(s: number): string | null {
     if (s === 0 && !form.title.trim()) return "Title is required";
@@ -516,19 +516,19 @@ export default function ChecklistTemplates() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={filterLocationId} onValueChange={setFilterLocationId}>
+          <Select value={filterRoleName} onValueChange={setFilterRoleName}>
             <SelectTrigger className="w-[180px] h-9 text-sm">
-              <SelectValue placeholder="All Locations" />
+              <SelectValue placeholder="All Roles" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Locations</SelectItem>
-              {locations.map((l) => (
-                <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+              <SelectItem value="all">All Roles</SelectItem>
+              {customRoles.map((r: any) => (
+                <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          {(filterCategory !== "all" || filterLocationId !== "all") && (
-            <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={() => { setFilterCategory("all"); setFilterLocationId("all"); }}>
+          {(filterCategory !== "all" || filterRoleName !== "all") && (
+            <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={() => { setFilterCategory("all"); setFilterRoleName("all"); }}>
               Clear filters
             </Button>
           )}
@@ -559,7 +559,7 @@ export default function ChecklistTemplates() {
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <ClipboardList className="h-10 w-10 text-muted-foreground/50 mb-3" />
             <p className="text-muted-foreground font-medium">No templates match filters</p>
-            <Button variant="outline" size="sm" className="mt-3" onClick={() => { setFilterCategory("all"); setFilterLocationId("all"); }}>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => { setFilterCategory("all"); setFilterRoleName("all"); }}>
               Clear filters
             </Button>
           </CardContent>
@@ -568,8 +568,6 @@ export default function ChecklistTemplates() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredTemplates.map((t) => {
             const photoCount = t.items.filter((i) => i.requires_photo).length;
-            const tplLocations = templateLocationMap[t.id] || [];
-            const tplTags = templateTagMap[t.id] || [];
             const tplCustomRoles = templateCustomRoleMap[t.id] || [];
             return (
               <Card key={t.id} className="group relative transition-shadow ">
@@ -596,26 +594,8 @@ export default function ChecklistTemplates() {
                       </Badge>
                     )}
                   </div>
-                  {(tplLocations.length > 0 || tplTags.length > 0 || tplCustomRoles.length > 0) && (
+                  {tplCustomRoles.length > 0 && (
                     <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                      {tplTags.map((tagId) => {
-                        const tag = tagMap[tagId];
-                        return tag ? (
-                          <Badge
-                            key={tagId}
-                            variant="outline"
-                            className="text-[10px] gap-0.5"
-                            style={{ borderColor: tag.color || undefined, color: tag.color || undefined }}
-                          >
-                            <Tag className="h-2.5 w-2.5" /> {tag.name}
-                          </Badge>
-                        ) : null;
-                      })}
-                      {tplLocations.map((locId) => (
-                        <Badge key={locId} variant="outline" className="text-[10px] gap-1">
-                          <MapPin className="h-2.5 w-2.5" /> {locationMap[locId] || locId}
-                        </Badge>
-                      ))}
                       {tplCustomRoles.map((roleName) => (
                         <Badge key={roleName} variant="outline" className="text-[10px] gap-1 border-violet-400 text-violet-600">
                           <UserCheck className="h-2.5 w-2.5" /> {roleName}

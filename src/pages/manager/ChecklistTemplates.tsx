@@ -10,6 +10,11 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -20,8 +25,9 @@ import {
 import { toast } from "@/hooks/use-toast";
 import {
   Plus, Pencil, X, ClipboardList, ChevronUp, ChevronDown, Tag, Camera,
-  Check, ListChecks, Archive, RotateCcw, UserCheck, MapPin,
+  Check, ListChecks, Archive, RotateCcw, UserCheck, MapPin, CalendarIcon,
 } from "lucide-react";
+import { format } from "date-fns";
 import { type ChecklistItem, normalizeItems } from "@/lib/checklist-utils";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -43,11 +49,22 @@ type Template = {
 
 type FormItem = { text: string; requires_photo: boolean };
 
+type Schedule = {
+  due_date: string | null;
+  recurrence_type: string;
+  recurrence_days: number[];
+  recurrence_time: string;
+};
+
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const emptySchedule: Schedule = { due_date: null, recurrence_type: "none", recurrence_days: [], recurrence_time: "09:00" };
+
 const emptyForm = {
   title: "", description: "", category: "",
   items: [{ text: "", requires_photo: false }] as FormItem[],
   is_published: false,
   selectedCustomRoleIds: [] as string[],
+  schedule: { ...emptySchedule },
 };
 
 const STEPS = [
@@ -236,6 +253,10 @@ export default function ManagerChecklistTemplates() {
               company_id: companyId!,
               assign_type: "custom_role",
               assign_value: roleName,
+              due_date: form.schedule.due_date || null,
+              recurrence_type: form.schedule.recurrence_type || "none",
+              recurrence_days: form.schedule.recurrence_days.length > 0 ? form.schedule.recurrence_days : null,
+              recurrence_time: form.schedule.recurrence_time || "09:00",
             };
           })
           .filter(Boolean);
@@ -310,6 +331,8 @@ export default function ManagerChecklistTemplates() {
       .filter((r: any) => customRoleNames.includes(r.name))
       .map((r: any) => r.id);
 
+    const firstAssign = tplAssignments[0] as any;
+
     setEditingId(t.id);
     setForm({
       title: t.title,
@@ -320,6 +343,12 @@ export default function ManagerChecklistTemplates() {
         : [{ text: "", requires_photo: false }],
       is_published: t.is_published,
       selectedCustomRoleIds: customRoleIds,
+      schedule: {
+        due_date: firstAssign?.due_date || null,
+        recurrence_type: firstAssign?.recurrence_type || "none",
+        recurrence_days: firstAssign?.recurrence_days || [],
+        recurrence_time: firstAssign?.recurrence_time || "09:00",
+      },
     });
     setStep(0);
     setDialogOpen(true);
@@ -676,7 +705,7 @@ export default function ManagerChecklistTemplates() {
 
                 {/* Custom Role selection — required */}
                 <div>
-                  <Label className="text-sm font-medium mb-1 block">
+                  <Label className="text-sm font-medium mb-1 block" id="role-label">
                     Custom Role <span className="text-destructive">*</span>
                   </Label>
                   <p className="text-xs text-muted-foreground mb-3">
@@ -724,6 +753,133 @@ export default function ManagerChecklistTemplates() {
                     </div>
                   )}
                 </div>
+
+                {/* Schedule */}
+                <Card className="p-4 space-y-3">
+                  <Label className="text-sm font-medium">Schedule</Label>
+                  <div className="flex items-center gap-2">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className={cn(
+                            "h-9 w-[170px] justify-start text-left text-xs font-normal",
+                            !form.schedule.due_date && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="h-3 w-3 mr-1" />
+                          {form.schedule.due_date
+                            ? format(new Date(form.schedule.due_date), "MMM d, yyyy")
+                            : "Due date (optional)"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={form.schedule.due_date ? new Date(form.schedule.due_date) : undefined}
+                          onSelect={(date) =>
+                            setForm((f) => ({
+                              ...f,
+                              schedule: { ...f.schedule, due_date: date ? date.toISOString() : null },
+                            }))
+                          }
+                          initialFocus
+                          className={cn("p-3 pointer-events-auto")}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    {form.schedule.due_date && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => setForm((f) => ({ ...f, schedule: { ...f.schedule, due_date: null } }))}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/50">
+                    <span className="text-xs text-muted-foreground">Repeat:</span>
+                    <Select
+                      value={form.schedule.recurrence_type}
+                      onValueChange={(v) =>
+                        setForm((f) => ({
+                          ...f,
+                          schedule: { ...f.schedule, recurrence_type: v, recurrence_days: [] },
+                        }))
+                      }
+                    >
+                      <SelectTrigger className="w-[110px] h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">One-time</SelectItem>
+                        <SelectItem value="daily">Daily</SelectItem>
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {form.schedule.recurrence_type === "weekly" && (
+                      <div className="flex gap-1">
+                        {DAY_LABELS.map((day, dayIdx) => (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() =>
+                              setForm((f) => {
+                                const days = f.schedule.recurrence_days.includes(dayIdx)
+                                  ? f.schedule.recurrence_days.filter((d) => d !== dayIdx)
+                                  : [...f.schedule.recurrence_days, dayIdx];
+                                return { ...f, schedule: { ...f.schedule, recurrence_days: days } };
+                              })
+                            }
+                            className={cn(
+                              "h-7 w-7 rounded text-[10px] font-medium transition-colors",
+                              form.schedule.recurrence_days.includes(dayIdx)
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted text-muted-foreground hover:bg-muted/80"
+                            )}
+                          >
+                            {day}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {form.schedule.recurrence_type === "monthly" && (
+                      <Input
+                        type="number"
+                        min={1}
+                        max={31}
+                        placeholder="Day"
+                        className="w-[80px] h-8 text-xs"
+                        value={form.schedule.recurrence_days[0] || ""}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value);
+                          setForm((f) => ({
+                            ...f,
+                            schedule: { ...f.schedule, recurrence_days: val >= 1 && val <= 31 ? [val] : [] },
+                          }));
+                        }}
+                      />
+                    )}
+                    {form.schedule.recurrence_type !== "none" && (
+                      <Input
+                        type="time"
+                        className="w-[100px] h-8 text-xs"
+                        value={form.schedule.recurrence_time}
+                        onChange={(e) =>
+                          setForm((f) => ({
+                            ...f,
+                            schedule: { ...f.schedule, recurrence_time: e.target.value },
+                          }))
+                        }
+                      />
+                    )}
+                  </div>
+                </Card>
               </div>
             )}
           </div>

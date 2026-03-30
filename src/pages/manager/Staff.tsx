@@ -11,10 +11,11 @@ import {
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
+import { Input } from "@/components/ui/input";
 import {
   Users, User, CheckSquare, ArrowLeft, CheckCircle2, Clock, XCircle,
   Award, FileText, ShieldCheck, Calendar, ExternalLink, Pencil, Tag,
-  History, ChevronRight,
+  History, ChevronRight, Search,
 } from "lucide-react";
 import { format, isPast, isWithinInterval, addDays } from "date-fns";
 
@@ -29,6 +30,7 @@ export default function ManagerStaff() {
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
   const [editRolesFor, setEditRolesFor] = useState<StaffMember | null>(null);
   const [editRoleIds, setEditRoleIds] = useState<string[]>([]);
+  const [search, setSearch] = useState("");
 
   // ── Staff list ──────────────────────────────────────────────────────────────
   const { data: staffList = [], isLoading } = useQuery({
@@ -170,6 +172,15 @@ export default function ManagerStaff() {
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
+
+  const filteredStaff = useMemo(() => {
+    if (!search.trim()) return staffList;
+    const q = search.toLowerCase();
+    return staffList.filter((s) =>
+      (s.full_name || "").toLowerCase().includes(q) ||
+      (staffRoleMap[s.user_id] || []).some((r) => r.name.toLowerCase().includes(q))
+    );
+  }, [staffList, staffRoleMap, search]);
 
   function openEditRoles(staff: StaffMember, e?: React.MouseEvent) {
     e?.stopPropagation();
@@ -489,6 +500,19 @@ export default function ManagerStaff() {
         <p className="text-muted-foreground">View and manage staff at your location</p>
       </div>
 
+      {/* Search */}
+      {!isLoading && staffList.length > 0 && (
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by name or role…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 rounded-xl"
+          />
+        </div>
+      )}
+
       {isLoading && (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
@@ -506,8 +530,14 @@ export default function ManagerStaff() {
         </Card>
       )}
 
+      {!isLoading && staffList.length > 0 && filteredStaff.length === 0 && (
+        <p className="text-sm text-muted-foreground text-center py-8">
+          No staff match "{search}"
+        </p>
+      )}
+
       <div className="space-y-2">
-        {staffList.map((staff) => {
+        {filteredStaff.map((staff) => {
           const staffRoles = staffRoleMap[staff.user_id] || [];
           return (
             <Card
