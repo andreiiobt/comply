@@ -153,6 +153,24 @@ export default function ChecklistTemplates() {
     enabled: !!companyId,
   });
 
+  const { data: userCustomRoles = [] } = useQuery({
+    queryKey: ["user-custom-roles", companyId],
+    queryFn: async () => {
+      const { data } = await supabase.from("user_custom_roles").select("user_id, custom_role_id");
+      return data || [];
+    },
+    enabled: !!companyId,
+  });
+
+  const { data: userRolesData = [] } = useQuery({
+    queryKey: ["user-roles-locations", companyId],
+    queryFn: async () => {
+      const { data } = await supabase.from("user_roles").select("user_id, location_id");
+      return data || [];
+    },
+    enabled: !!companyId,
+  });
+
   // Map: tagId -> locationIds
   const tagToLocations = useMemo(() => {
     const m: Record<string, string[]> = {};
@@ -397,6 +415,7 @@ export default function ChecklistTemplates() {
 
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterRoleName, setFilterRoleName] = useState("all");
+  const [filterLocationId, setFilterLocationId] = useState("all");
 
   const locationMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -443,6 +462,48 @@ export default function ChecklistTemplates() {
     return m;
   }, [allAssignments]);
 
+  // Map template → location IDs (via custom role → users with that role → their locations)
+  const templateLocationsMap = useMemo(() => {
+    // user_id → location_ids
+    const userToLocations: Record<string, string[]> = {};
+    userRolesData.forEach((ur: any) => {
+      if (ur.location_id) {
+        if (!userToLocations[ur.user_id]) userToLocations[ur.user_id] = [];
+        userToLocations[ur.user_id].push(ur.location_id);
+      }
+    });
+
+    // custom_role_id → Set of location_ids
+    const roleIdToLocations: Record<string, Set<string>> = {};
+    userCustomRoles.forEach((ucr: any) => {
+      if (!roleIdToLocations[ucr.custom_role_id]) roleIdToLocations[ucr.custom_role_id] = new Set();
+      (userToLocations[ucr.user_id] || []).forEach((lid) =>
+        roleIdToLocations[ucr.custom_role_id].add(lid)
+      );
+    });
+
+    // template_id → location_ids (via custom role name → role id → locations)
+    const m: Record<string, string[]> = {};
+    allAssignments.forEach((a: any) => {
+      if (a.assign_type === "custom_role" && a.assign_value) {
+        const role = customRoles.find((r: any) => r.name === a.assign_value);
+        if (role) {
+          const locs = Array.from(roleIdToLocations[role.id] || []);
+          if (!m[a.template_id]) m[a.template_id] = [];
+          locs.forEach((lid) => {
+            if (!m[a.template_id].includes(lid)) m[a.template_id].push(lid);
+          });
+        }
+      }
+      // Also include direct location assignments
+      if (a.assign_type === "location" && a.assign_value) {
+        if (!m[a.template_id]) m[a.template_id] = [];
+        if (!m[a.template_id].includes(a.assign_value)) m[a.template_id].push(a.assign_value);
+      }
+    });
+    return m;
+  }, [allAssignments, customRoles, userCustomRoles, userRolesData]);
+
   const categories = useMemo(() => {
     const set = new Set<string>();
     templates.forEach((t) => { if (t.category) set.add(t.category); });
@@ -456,9 +517,13 @@ export default function ChecklistTemplates() {
         const roles = templateCustomRoleMap[t.id] || [];
         if (!roles.includes(filterRoleName)) return false;
       }
+      if (filterLocationId !== "all") {
+        const locs = templateLocationsMap[t.id] || [];
+        if (!locs.includes(filterLocationId)) return false;
+      }
       return true;
     });
-  }, [templates, filterCategory, filterRoleName, templateCustomRoleMap]);
+  }, [templates, filterCategory, filterRoleName, filterLocationId, templateCustomRoleMap, templateLocationsMap]);
 
   function validateStep(s: number): string | null {
     if (s === 0 && !form.title.trim()) return "Title is required";
@@ -527,8 +592,19 @@ export default function ChecklistTemplates() {
               ))}
             </SelectContent>
           </Select>
-          {(filterCategory !== "all" || filterRoleName !== "all") && (
-            <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={() => { setFilterCategory("all"); setFilterRoleName("all"); }}>
+          <Select value={filterLocationId} onValueChange={setFilterLocationId}>
+            <SelectTrigger className="w-[180px] h-9 text-sm">
+              <SelectValue placeholder="All Locations" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {locations.map((l: any) => (
+                <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {(filterCategory !== "all" || filterRoleName !== "all" || filterLocationId !== "all") && (
+            <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={() => { setFilterCategory("all"); setFilterRoleName("all"); setFilterLocationId("all"); }}>
               Clear filters
             </Button>
           )}
@@ -569,6 +645,7 @@ export default function ChecklistTemplates() {
           {filteredTemplates.map((t) => {
             const photoCount = t.items.filter((i) => i.requires_photo).length;
             const tplCustomRoles = templateCustomRoleMap[t.id] || [];
+            const tplLocationIds = templateLocationsMap[t.id] || [];
             return (
               <Card key={t.id} className="group relative transition-shadow ">
                 <CardHeader className="pb-3">
@@ -601,6 +678,15 @@ export default function ChecklistTemplates() {
                           <UserCheck className="h-2.5 w-2.5" /> {roleName}
                         </Badge>
                       ))}
+                    </div>
+                  )}
+                  {tplLocationIds.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                      {tplLocationIds.map((lid) => locationMap[lid] ? (
+                        <Badge key={lid} className="text-[10px] gap-1 bg-primary text-primary-foreground border-none">
+                          <MapPin className="h-2.5 w-2.5" /> {locationMap[lid]}
+                        </Badge>
+                      ) : null)}
                     </div>
                   )}
                   <div className="flex gap-1 mt-3">

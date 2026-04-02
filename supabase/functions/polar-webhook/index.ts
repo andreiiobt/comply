@@ -54,6 +54,61 @@ async function verifyPolarSignature(
   return providedSigs.some((sig) => sig === computedSig);
 }
 
+// Resolve which company (by our internal ID) a Polar subscription belongs to.
+// Tries customer.external_id first (set at checkout), then looks up by polar_customer_id.
+async function resolveCompanyId(
+  adminClient: ReturnType<typeof createClient>,
+  sub: any
+): Promise<string | null> {
+  const externalId: string | undefined = sub?.customer?.external_id;
+  if (externalId) return externalId;
+
+  const customerId: string | undefined = sub?.customer_id;
+  if (!customerId) return null;
+
+  const { data } = await adminClient
+    .from("companies")
+    .select("id")
+    .eq("polar_customer_id", customerId)
+    .maybeSingle();
+
+  return data?.id ?? null;
+}
+
+// Write the subscription state cache fields to the companies table.
+async function cacheSubscriptionState(
+  adminClient: ReturnType<typeof createClient>,
+  companyId: string,
+  sub: any
+) {
+  const update: Record<string, unknown> = {
+    subscription_status: sub.status ?? null,
+    subscription_seats: sub.seats ?? null,
+    subscription_period_end: sub.current_period_end ?? null,
+    subscription_cancel_at_period_end: sub.cancel_at_period_end ?? false,
+    subscription_product_name: sub.product?.name ?? null,
+    subscription_synced_at: new Date().toISOString(),
+  };
+
+  // Also keep polar_customer_id up to date
+  if (sub.customer_id) {
+    update.polar_customer_id = sub.customer_id;
+  }
+
+  const { error } = await adminClient
+    .from("companies")
+    .update(update)
+    .eq("id", companyId);
+
+  if (error) {
+    console.error(`cacheSubscriptionState failed for company ${companyId}:`, error.message);
+  } else {
+    console.log(
+      `Cached subscription state for company ${companyId}: status=${sub.status}, seats=${sub.seats}, period_end=${sub.current_period_end}`
+    );
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });
@@ -139,70 +194,91 @@ Deno.serve(async (req) => {
 
   // -----------------------------------------------------------------
   // subscription.created — a new subscription was created.
-  // Ensures polar_customer_id is stored even if checkout webhook
-  // arrived late or was missed.
+  // Cache the full subscription state so the billing page has
+  // instant data without an additional Polar API call.
   // -----------------------------------------------------------------
   if (eventType === "subscription.created") {
     const sub = event.data;
-    const customerId: string | undefined = sub?.customer_id;
-    const externalId: string | undefined =
-      sub?.customer?.external_id ?? sub?.metadata?.company_id;
+    const companyId = await resolveCompanyId(adminClient, sub);
 
-    if (customerId && externalId) {
-      const { error } = await adminClient
-        .from("companies")
-        .update({ polar_customer_id: customerId })
-        .eq("id", externalId);
-
-      if (error) {
-        console.error("Failed to store polar_customer_id from subscription.created:", error.message);
-      } else {
-        console.log(`subscription.created: linked polar_customer_id ${customerId} to company ${externalId}`);
-      }
+    if (companyId) {
+      await cacheSubscriptionState(adminClient, companyId, sub);
     } else {
       console.warn("subscription.created: could not resolve company from event", {
-        customerId,
-        externalId,
-        customerExternalId: sub?.customer?.external_id,
+        customerId: sub?.customer_id,
+        externalId: sub?.customer?.external_id,
       });
     }
+
     return new Response(JSON.stringify({ received: true }), {
       headers: { "Content-Type": "application/json" },
     });
   }
 
   // -----------------------------------------------------------------
-  // subscription.updated — seat/plan changes, cancellation scheduled.
-  // We don't cache subscription state locally (it's always read from
-  // Polar's API), so just ensure the customer link is still correct.
+  // subscription.updated — seat/plan changes, billing renewal,
+  // cancellation scheduled, trial converted to paid, etc.
+  // This is the primary event for keeping local state in sync with Polar.
+  // Cache all relevant fields so the app reflects changes immediately.
   // -----------------------------------------------------------------
   if (eventType === "subscription.updated") {
     const sub = event.data;
-    const customerId: string | undefined = sub?.customer_id;
-    const externalId: string | undefined = sub?.customer?.external_id;
+    const companyId = await resolveCompanyId(adminClient, sub);
 
-    if (customerId && externalId) {
-      // Update link in case it was stale
-      await adminClient
-        .from("companies")
-        .update({ polar_customer_id: customerId })
-        .eq("id", externalId)
-        .neq("polar_customer_id", customerId); // no-op if already correct
+    if (companyId) {
+      await cacheSubscriptionState(adminClient, companyId, sub);
+    } else {
+      console.warn("subscription.updated: could not resolve company from event", {
+        customerId: sub?.customer_id,
+        externalId: sub?.customer?.external_id,
+      });
     }
-    console.log(`subscription.updated: status=${sub?.status}, cancel_at_period_end=${sub?.cancel_at_period_end}`);
+
+    console.log(
+      `subscription.updated: status=${sub?.status}, seats=${sub?.seats}, cancel_at_period_end=${sub?.cancel_at_period_end}`
+    );
     return new Response(JSON.stringify({ received: true }), {
       headers: { "Content-Type": "application/json" },
     });
   }
 
   // -----------------------------------------------------------------
-  // subscription.canceled / subscription.revoked
-  // Nothing to update in DB — status is read from Polar's API.
-  // Just log and acknowledge.
+  // subscription.canceled — customer cancelled; subscription will
+  // remain active until period_end. Update the cache to reflect this
+  // so the billing page shows the cancellation notice immediately.
   // -----------------------------------------------------------------
-  if (eventType === "subscription.canceled" || eventType === "subscription.revoked") {
+  if (eventType === "subscription.canceled") {
     const sub = event.data;
-    console.log(`${eventType}: customer_id=${sub?.customer_id}, external_id=${sub?.customer?.external_id}`);
+    const companyId = await resolveCompanyId(adminClient, sub);
+
+    if (companyId) {
+      await cacheSubscriptionState(adminClient, companyId, sub);
+    }
+
+    console.log(`subscription.canceled: customer_id=${sub?.customer_id}`);
+    return new Response(JSON.stringify({ received: true }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // -----------------------------------------------------------------
+  // subscription.revoked — subscription ended (non-payment or hard
+  // cancellation). Mark as inactive in the local cache.
+  // -----------------------------------------------------------------
+  if (eventType === "subscription.revoked") {
+    const sub = event.data;
+    const companyId = await resolveCompanyId(adminClient, sub);
+
+    if (companyId) {
+      // Polar sends status="canceled" on revoked events too — override to
+      // make it clear this subscription is fully ended.
+      await cacheSubscriptionState(adminClient, companyId, {
+        ...sub,
+        status: "inactive",
+      });
+    }
+
+    console.log(`subscription.revoked: customer_id=${sub?.customer_id}`);
     return new Response(JSON.stringify({ received: true }), {
       headers: { "Content-Type": "application/json" },
     });

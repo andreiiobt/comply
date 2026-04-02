@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -85,6 +85,26 @@ export default function AdminPolicies() {
     },
     enabled: policies.length > 0,
   });
+
+  // Resolve user names for the agreements dialog
+  const agreementUserIds = useMemo(() => [...new Set(agreements.map((a) => a.user_id))], [agreements]);
+  const { data: agreementProfiles = [] } = useQuery({
+    queryKey: ["agreement-profiles", agreementUserIds],
+    queryFn: async () => {
+      if (!agreementUserIds.length) return [];
+      const { data } = await supabase
+        .from("profiles")
+        .select("user_id, full_name")
+        .in("user_id", agreementUserIds);
+      return (data || []) as { user_id: string; full_name: string | null }[];
+    },
+    enabled: agreementUserIds.length > 0,
+  });
+  const agreementUserMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    agreementProfiles.forEach((p) => { m[p.user_id] = p.full_name || "Unknown"; });
+    return m;
+  }, [agreementProfiles]);
 
   const { data: userCount = 0 } = useQuery<number>({
     queryKey: ["staff-count", profile?.company_id],
@@ -469,7 +489,7 @@ export default function AdminPolicies() {
                 <div key={a.id} className="flex items-center justify-between py-2 border-b last:border-0">
                   <div className="flex items-center gap-2">
                     <Check className="h-4 w-4 text-green-500" />
-                    <span className="text-sm font-mono text-muted-foreground truncate">{a.user_id.slice(0, 8)}…</span>
+                    <span className="text-sm font-medium truncate">{agreementUserMap[a.user_id] || a.user_id.slice(0, 8) + "…"}</span>
                   </div>
                   <span className="text-xs text-muted-foreground">{format(new Date(a.agreed_at), "MMM d, yyyy HH:mm")}</span>
                 </div>

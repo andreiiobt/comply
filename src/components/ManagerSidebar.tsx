@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Users, CheckSquare, LogOut, Home, ClipboardList, AlertTriangle, CalendarCheck,
+  LayoutDashboard, Users, CheckSquare, LogOut, Home, ClipboardList, AlertTriangle, CalendarCheck, BarChart2,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate } from "react-router-dom";
@@ -26,9 +26,10 @@ const navGroups = [
     label: "Compliance",
     items: [
       { title: "Daily Overview", url: "/manager/daily-overview", icon: CalendarCheck },
-      { title: "Checklists", url: "/manager/checklists", icon: CheckSquare },
+      { title: "Submissions", url: "/manager/checklists", icon: CheckSquare },
       { title: "Templates", url: "/manager/checklist-templates", icon: ClipboardList },
       { title: "Incidents", url: "/manager/incidents", icon: AlertTriangle },
+      { title: "Reports", url: "/manager/reports", icon: BarChart2 },
     ],
   },
 ];

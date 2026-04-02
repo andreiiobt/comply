@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Comply — Offline</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: "Radio Canada Big", system-ui, sans-serif;
+        background: #F6F7F5;
+        color: #0A2B02;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        text-align: center;
+      }
+      .icon {
+        width: 64px;
+        height: 64px;
+        background: #0A2B02;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1.5rem;
+      }
+      .icon svg { width: 36px; height: 36px; }
+      h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+      p { color: #555; font-size: 0.95rem; max-width: 320px; line-height: 1.5; }
+      button {
+        margin-top: 2rem;
+        background: #0A2B02;
+        color: #C7FE9D;
+        border: none;
+        padding: 0.75rem 2rem;
+        border-radius: 999px;
+        font-family: inherit;
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:active { opacity: 0.85; }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Radio+Canada+Big:wght@400;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div class="icon">
+      <svg viewBox="0 0 184 184" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path fill-rule="evenodd" clip-rule="evenodd" d="M69.9072 45.7622H77.1714H84.4351H91.7002H98.9609H106.225H113.489L113.489 48.2293H120.753L128.017 48.2293L128.017 52.6117H135.281L142.545 52.6116L142.545 60.181H149.809L149.809 70.3404H157.073V86.437H149.809L149.81 96.5969H142.546L142.544 101.188H143.082L143.082 105.99H150.38L150.379 112.435H157.677V122.646L150.381 122.646V129.091H143.083L143.081 133.893H128.487L128.487 136.673H113.892L113.892 138.238H70.1087L70.1088 136.673H55.5132L55.5138 133.893H40.9197L40.9173 129.091H33.6195V122.646L26.3232 122.646V112.435H33.621L33.6205 105.99H40.9182L40.9182 104.166H40.8525L40.8501 96.5969H33.5859L33.5874 86.437H26.3232V70.3404H33.5874L33.5869 60.181H40.8511L40.851 52.6116L48.1152 52.6117H55.3794L55.3789 48.2293L62.6431 48.2293H69.9072L69.9072 45.7622ZM84.4351 48.2292H91.7002H98.9609H106.225V52.6118H113.489H120.753V60.1813H128.017V70.3404H135.281L135.279 86.4375H128.017V96.5963H120.753V98.4079V104.166H113.489H106.225V108.549H98.9609H91.6993H84.4351H77.1714V104.166H69.9073H62.6431V98.4079V96.5963H55.3794V86.4375H48.1167L48.1152 70.3404H55.3794V60.1813H62.6431V52.6118H69.9072H77.1714V48.2292H84.4351Z" fill="#C7FE9D"/>
+      </svg>
+    </div>
+    <h1>You're offline</h1>
+    <p>No internet connection detected. Check your connection and try again.</p>
+    <button onclick="window.location.reload()">Try again</button>
+  </body>
+</html>

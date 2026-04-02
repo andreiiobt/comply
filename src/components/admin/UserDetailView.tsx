@@ -167,9 +167,6 @@ export default function UserDetailView({ user, onBack }: UserDetailViewProps) {
               <UserIcon className="h-6 w-6 text-primary" />
               {user.full_name || "Unnamed"}
             </h1>
-            <p className="text-muted-foreground text-sm mt-1">
-              {userProfile?.xp || 0} XP accumulated across training and compliance
-            </p>
           </div>
         </div>
       </div>

@@ -138,10 +138,30 @@ Deno.serve(async (req) => {
 
     const failed = results.filter(r => !r.success);
 
+    // Write the confirmed seat count back to the local cache immediately.
+    // The Polar webhook will also fire shortly after and do the same, but
+    // writing here means the billing page reflects the change without delay.
+    if (results.length > 0 && failed.length === 0) {
+      const firstSub = activeSubscriptions.find(s => results.find(r => r.id === s.id && r.success));
+      if (firstSub) {
+        await adminClient
+          .from("companies")
+          .update({
+            subscription_seats: seatsToSet,
+            subscription_status: firstSub.status,
+            subscription_period_end: firstSub.current_period_end ?? null,
+            subscription_cancel_at_period_end: firstSub.cancel_at_period_end ?? false,
+            subscription_product_name: firstSub.product?.name ?? null,
+            subscription_synced_at: new Date().toISOString(),
+          })
+          .eq("id", company_id);
+      }
+    }
+
     return new Response(
-      JSON.stringify({ 
-        success: failed.length === 0, 
-        locations: locationCount, 
+      JSON.stringify({
+        success: failed.length === 0,
+        locations: locationCount,
         results,
         summary: `Updated ${results.length - failed.length}/${results.length} subscriptions.`
       }),

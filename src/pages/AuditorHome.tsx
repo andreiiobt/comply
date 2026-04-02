@@ -6,13 +6,11 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { CheckSquare, CheckCircle2, Clock, XCircle, User, Settings, ClipboardList, Play, AlertTriangle, CalendarCheck, ArrowRight } from "lucide-react";
+import { CheckSquare, CheckCircle2, Clock, User, Settings, ClipboardList, AlertTriangle, CalendarCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { format, addDays, startOfWeek, endOfWeek, isWithinInterval, isSameDay } from "date-fns";
+import { format, addDays, startOfWeek, endOfWeek, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import NotificationBell from "@/components/NotificationBell";
 import { useExpiryCheck } from "@/hooks/useExpiryCheck";
 
@@ -24,19 +22,54 @@ export default function AuditorHome() {
   const todayDayIdx = (new Date().getDay() + 6) % 7;
   const [selectedDayIdx, setSelectedDayIdx] = useState<number | null>(todayDayIdx);
 
-  const { data: submissions = [], isLoading } = useQuery({
+  const { data: submissions = [] } = useQuery({
     queryKey: ["my-submissions", user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase.
-      from("checklist_submissions").
-      select("*").
-      eq("user_id", user!.id).
-      order("created_at", { ascending: false });
+      const { data, error } = await supabase
+        .from("checklist_submissions")
+        .select("template_id, created_at")
+        .eq("user_id", user!.id)
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return data || [];
     },
-    enabled: !!user?.id
+    enabled: !!user?.id,
   });
+
+  // Today's submissions scoped to the company — uses proper UTC-aware timestamps
+  // so users in non-UTC timezones (e.g. AEST UTC+10) get the right day window.
+  // RLS scopes results to the company; admins/managers see all; staff see own rows.
+  const { data: todayTeamSubs = [] } = useQuery({
+    queryKey: ["today-team-submissions", profile?.company_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("checklist_submissions")
+        .select("template_id")
+        .gte("created_at", startOfDay(new Date()).toISOString())
+        .lte("created_at", endOfDay(new Date()).toISOString());
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!profile?.company_id,
+  });
+
+  // Team-wide done IDs (works fully for admin/manager; for staff falls back to own rows)
+  const todayDoneIds = useMemo(
+    () => new Set((todayTeamSubs as any[]).map((s) => s.template_id).filter(Boolean)),
+    [todayTeamSubs]
+  );
+
+  // Personal done IDs derived from local-timezone-aware date comparison —
+  // used as a guaranteed fallback so the Done marker always matches the circle count
+  const personalTodayDoneIds = useMemo(() => {
+    const todayStr = format(new Date(), "yyyy-MM-dd");
+    return new Set(
+      (submissions as any[])
+        .filter((s) => format(new Date(s.created_at), "yyyy-MM-dd") === todayStr)
+        .map((s) => s.template_id)
+        .filter(Boolean)
+    );
+  }, [submissions]);
 
   // Fetch assignments for the current user (RLS handles filtering)
   const { data: assignments = [] } = useQuery({
@@ -95,84 +128,6 @@ export default function AuditorHome() {
     enabled: !!profile?.company_id
   });
 
-  // Template titles for submissions
-  const pending = submissions.filter((s) => s.status === "pending");
-  const approved = submissions.filter((s) => s.status === "approved");
-  const rejected = submissions.filter((s) => s.status === "rejected");
-
-  // Due Today: compute which templates are due based on recurrence
-  const dueTodayTemplates = useMemo(() => {
-    const now = new Date();
-    const dayOfWeek = now.getDay(); // 0=Sun
-    const dayOfMonth = now.getDate();
-    const todayStr = format(now, "yyyy-MM-dd");
-
-    // Get unique template IDs that are due today
-    const dueTemplateIds = new Set<string>();
-    assignments.forEach((a: any) => {
-      const rt = a.recurrence_type || "none";
-      if (rt === "daily") {
-        dueTemplateIds.add(a.template_id);
-      } else if (rt === "weekly" && Array.isArray(a.recurrence_days) && a.recurrence_days.includes(dayOfWeek)) {
-        dueTemplateIds.add(a.template_id);
-      } else if (rt === "monthly" && Array.isArray(a.recurrence_days) && a.recurrence_days.includes(dayOfMonth)) {
-        dueTemplateIds.add(a.template_id);
-      }
-    });
-
-    if (dueTemplateIds.size === 0) return [];
-
-    // Check which ones have already been submitted today
-    const todaySubmissionTemplates = new Set(
-      submissions.
-      filter((s) => format(new Date(s.created_at), "yyyy-MM-dd") === todayStr).
-      map((s: any) => s.template_id).
-      filter(Boolean)
-    );
-
-    return templates.
-    filter((t: any) => dueTemplateIds.has(t.id)).
-    map((t: any) => ({
-      ...t,
-      completedToday: todaySubmissionTemplates.has(t.id)
-    }));
-  }, [assignments, templates, submissions]);
-
-  // Upcoming 7 days (excluding today)
-  const upcomingDays = useMemo(() => {
-    const now = new Date();
-    const days: {date: Date;label: string;templates: {id: string;title: string;}[];}[] = [];
-
-    for (let d = 1; d <= 7; d++) {
-      const target = addDays(now, d);
-      const dow = target.getDay();
-      const dom = target.getDate();
-
-      const dueIds = new Set<string>();
-      assignments.forEach((a: any) => {
-        const rt = a.recurrence_type || "none";
-        if (rt === "daily") dueIds.add(a.template_id);else
-        if (rt === "weekly" && Array.isArray(a.recurrence_days) && a.recurrence_days.includes(dow)) dueIds.add(a.template_id);else
-        if (rt === "monthly" && Array.isArray(a.recurrence_days) && a.recurrence_days.includes(dom)) dueIds.add(a.template_id);
-      });
-
-      // Also include templates with a one-time due_date on that day
-      Object.entries(dueDateMap).forEach(([tid, dd]) => {
-        const dueD = new Date(dd);
-        if (format(dueD, "yyyy-MM-dd") === format(target, "yyyy-MM-dd")) dueIds.add(tid);
-      });
-
-      if (dueIds.size > 0) {
-        const matched = templates.filter((t: any) => dueIds.has(t.id)).map((t: any) => ({ id: t.id, title: t.title }));
-        if (matched.length > 0) {
-          days.push({ date: target, label: format(target, "EEE, MMM d"), templates: matched });
-        }
-      }
-    }
-    return days;
-  }, [assignments, templates, dueDateMap]);
-
-
   // Weekly activity data
   const weekActivity = useMemo(() => {
     const now = new Date();
@@ -190,8 +145,8 @@ export default function AuditorHome() {
       }
     });
 
-    // Per-day due templates
-    const perDayDue: {id: string;title: string;completedThatDay: boolean;}[][] = Array.from({ length: 7 }, () => []);
+    // Per-day due templates (personal assignments)
+    const perDayDue: { id: string; title: string; completedThatDay: boolean }[][] = Array.from({ length: 7 }, () => []);
     for (let i = 0; i < 7; i++) {
       const target = addDays(ws, i);
       const dow = target.getDay();
@@ -201,46 +156,30 @@ export default function AuditorHome() {
       const dueIds = new Set<string>();
       assignments.forEach((a: any) => {
         const rt = a.recurrence_type || "none";
-        if (rt === "daily") dueIds.add(a.template_id);else
-        if (rt === "weekly" && Array.isArray(a.recurrence_days) && a.recurrence_days.includes(dow)) dueIds.add(a.template_id);else
-        if (rt === "monthly" && Array.isArray(a.recurrence_days) && a.recurrence_days.includes(dom)) dueIds.add(a.template_id);
+        if (rt === "daily") dueIds.add(a.template_id);
+        else if (rt === "weekly" && Array.isArray(a.recurrence_days) && a.recurrence_days.includes(dow)) dueIds.add(a.template_id);
+        else if (rt === "monthly" && Array.isArray(a.recurrence_days) && a.recurrence_days.includes(dom)) dueIds.add(a.template_id);
       });
-      // One-time due dates
       Object.entries(dueDateMap).forEach(([tid, dd]) => {
         if (format(new Date(dd), "yyyy-MM-dd") === targetStr) dueIds.add(tid);
       });
 
       const submittedThatDay = new Set(
-        submissions.
-        filter((s) => format(new Date(s.created_at), "yyyy-MM-dd") === targetStr).
-        map((s: any) => s.template_id).
-        filter(Boolean)
+        submissions
+          .filter((s) => format(new Date(s.created_at), "yyyy-MM-dd") === targetStr)
+          .map((s: any) => s.template_id)
+          .filter(Boolean)
       );
 
-      perDayDue[i] = templates.
-      filter((t: any) => dueIds.has(t.id)).
-      map((t: any) => ({ id: t.id, title: t.title, completedThatDay: submittedThatDay.has(t.id) }));
+      perDayDue[i] = templates
+        .filter((t: any) => dueIds.has(t.id))
+        .map((t: any) => ({ id: t.id, title: t.title, completedThatDay: submittedThatDay.has(t.id) }));
     }
 
-    // Weekly goal
-    const allDueIds = new Set<string>();
-    perDayDue.forEach((day) => day.forEach((t) => allDueIds.add(t.id)));
-    const weekSubmissionCount = counts.reduce((a, b) => a + b, 0);
-    const goalTotal = Math.max(allDueIds.size, 1);
-
-    return { dayLabels, counts, todayIdx, completed: weekSubmissionCount, goal: goalTotal, perDayDue, weekStart: ws };
+    return { dayLabels, counts, todayIdx, perDayDue, weekStart: ws };
   }, [submissions, assignments, templates, dueDateMap]);
 
-  const stats = [
-  { label: "Pending", count: pending.length, icon: Clock, color: "text-muted-foreground" },
-  { label: "Approved", count: approved.length, icon: CheckCircle2, color: "text-primary" },
-  { label: "Rejected", count: rejected.length, icon: XCircle, color: "text-destructive" }];
-
-
   const ease = [0.16, 1, 0.3, 1] as [number, number, number, number];
-
-  // Find first incomplete due-today template for CTA
-  const firstIncompleteDueToday = dueTodayTemplates.find((t) => !t.completedToday);
 
   return (
     <div className="min-h-screen bg-background">
@@ -284,23 +223,18 @@ export default function AuditorHome() {
               <CheckSquare className="h-3.5 w-3.5" />
               Submissions
             </Button>
+            {(primaryRole === "admin" || primaryRole === "manager") && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="rounded-xl gap-1.5"
+                onClick={() => navigate(`/${primaryRole}/report-incident`)}>
+                <AlertTriangle className="h-3.5 w-3.5" />
+                Report Incident
+              </Button>
+            )}
           </div>
         </motion.div>
-
-        {/* Stats row */}
-        <div className="grid grid-cols-3 gap-2.5">
-          {stats.map((stat, i) =>
-          <motion.div key={stat.label} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 * i, duration: 0.5, ease }}>
-              <Card className="rounded-2xl">
-                <CardContent className="p-3 text-center">
-                  <stat.icon className={`h-5 w-5 mx-auto mb-1 ${stat.color}`} />
-                  <p className="text-lg font-display font-bold tabular-nums">{stat.count}</p>
-                  <p className="text-[10px] text-muted-foreground leading-tight">{stat.label}</p>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-        </div>
 
         {/* Activity Calendar with inline day detail */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08, duration: 0.5, ease }}>
@@ -324,23 +258,20 @@ export default function AuditorHome() {
                       key={i}
                       onClick={() => setSelectedDayIdx(isSelected ? null : i)}
                       className="flex flex-col items-center gap-1.5 group">
-                      
-                      <span className="text-[10px] font-medium text-muted-foreground">{label}</span>
+
                       <div
                         className={cn(
-                          "w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold tabular-nums transition-all",
+                          "w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold transition-all",
                           isSelected ?
                           "ring-2 ring-primary ring-offset-2 ring-offset-background" :
                           "",
                           isToday ?
                           "bg-primary text-primary-foreground" :
-                          count > 0 ?
-                          "bg-primary/15 text-primary" :
                           "bg-muted text-muted-foreground",
                           "active:scale-95"
                         )}>
-                        
-                        {count}
+
+                        {label}
                       </div>
                       {hasDue &&
                       <span className={cn("w-1 h-1 rounded-full", isToday ? "bg-primary" : "bg-muted-foreground/40")} />
@@ -351,82 +282,58 @@ export default function AuditorHome() {
               </div>
 
               {/* Selected day detail */}
-              {selectedDayIdx !== null &&
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="border-t pt-3">
-                
+              {selectedDayIdx !== null && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  className="border-t pt-3"
+                >
                   <p className="text-xs font-medium text-muted-foreground mb-2">
                     {format(addDays(weekActivity.weekStart, selectedDayIdx), "EEEE, MMM d")}
-                    {selectedDayIdx === weekActivity.todayIdx &&
-                  <span className="text-primary ml-1">· Today</span>
-                  }
+                    {selectedDayIdx === weekActivity.todayIdx && (
+                      <span className="text-primary ml-1">· Today</span>
+                    )}
                   </p>
-                  {weekActivity.perDayDue[selectedDayIdx].length === 0 ?
-                <p className="text-sm text-muted-foreground py-2">Nothing due this day.</p> :
-
-                <div className="space-y-1">
-                      {weekActivity.perDayDue[selectedDayIdx].map((tpl) =>
-                  <div key={tpl.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                          <div className="flex items-center gap-2 min-w-0">
-                            {tpl.completedThatDay ?
-                      <CheckCircle2 className="h-4 w-4 text-primary shrink-0" /> :
-
-                      <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
-                      }
+                  {weekActivity.perDayDue[selectedDayIdx].length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-2">Nothing scheduled this day.</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {weekActivity.perDayDue[selectedDayIdx].map((tpl) => {
+                        // For today: team-wide check (admin/manager see all) with
+                        // personal fallback so own submissions always show as Done
+                        const isDone =
+                          selectedDayIdx === weekActivity.todayIdx
+                            ? todayDoneIds.has(tpl.id) || personalTodayDoneIds.has(tpl.id)
+                            : tpl.completedThatDay;
+                        const isFuture = selectedDayIdx > weekActivity.todayIdx;
+                        return (
+                          <div key={tpl.id} className="flex items-center gap-2 py-2 border-b last:border-0">
+                            {isDone ? (
+                              <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                            ) : (
+                              <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+                            )}
                             <p className={cn(
-                        "text-sm font-display font-semibold truncate",
-                        tpl.completedThatDay && "text-muted-foreground line-through"
-                      )}>
+                              "text-sm font-display font-semibold truncate flex-1",
+                              isDone && "text-muted-foreground line-through"
+                            )}>
                               {tpl.title}
                             </p>
+                            {isDone && (
+                              <span className="text-[10px] text-primary font-medium shrink-0">Done</span>
+                            )}
+                            {!isDone && isFuture && (
+                              <span className="text-[10px] text-muted-foreground shrink-0">Scheduled</span>
+                            )}
                           </div>
-                          {!tpl.completedThatDay && selectedDayIdx === weekActivity.todayIdx &&
-                    <Button size="sm" className="rounded-xl gap-1 shrink-0" onClick={() => navigate(`/checklist/${tpl.id}`)}>
-                              <Play className="h-3.5 w-3.5" /> Start
-                            </Button>
-                    }
-                          {!tpl.completedThatDay && selectedDayIdx !== weekActivity.todayIdx &&
-                    <Badge variant="outline" className="text-[10px] shrink-0">Scheduled</Badge>
-                    }
-                        </div>
-                  )}
+                        );
+                      })}
                     </div>
-                }
+                  )}
                 </motion.div>
-              }
-
-              {/* Weekly goal */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium text-muted-foreground">Weekly goal</p>
-                  <p className="text-xs font-bold tabular-nums">
-                    {weekActivity.completed}/{weekActivity.goal}
-                  </p>
-                </div>
-                <Progress
-                  value={Math.min(weekActivity.completed / weekActivity.goal * 100, 100)}
-                  className="h-2 rounded-full" />
-                
-              </div>
-
-              {/* CTA */}
-              <Button
-                className="w-full rounded-xl gap-2"
-                onClick={() => {
-                  if (firstIncompleteDueToday) {
-                    navigate(`/checklist/${firstIncompleteDueToday.id}`);
-                  } else {
-                    navigate("/my-checklists");
-                  }
-                }}>
-                
-                Continue tasks
-                <ArrowRight className="h-4 w-4" />
-              </Button>
+              )}
             </CardContent>
           </Card>
         </motion.div>

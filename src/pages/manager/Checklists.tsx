@@ -22,10 +22,13 @@ export default function ManagerChecklists() {
   const [filterMode, setFilterMode] = useState<string>("all");
 
   const { data: staffIds = [] } = useQuery({
-    queryKey: ["mgr-checklist-staff", locationId],
+    queryKey: ["mgr-checklist-staff", locationId, user?.id],
     queryFn: async () => {
       const { data } = await supabase.from("user_roles").select("user_id").eq("location_id", locationId!).eq("role", "staff");
-      return (data || []).map((r) => r.user_id);
+      const ids = (data || []).map((r) => r.user_id);
+      // Include the manager's own submissions too
+      if (user?.id && !ids.includes(user.id)) ids.push(user.id);
+      return ids;
     },
     enabled: !!locationId,
   });

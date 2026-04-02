@@ -40,6 +40,7 @@ const AdminIncidentReports = lazy(() => import("./pages/admin/IncidentReports"))
 const AdminIncidentReportDetail = lazy(() => import("./pages/admin/IncidentReportDetail"));
 const AdminChecklistSubmissionDetail = lazy(() => import("./pages/admin/ChecklistSubmissionDetail"));
 const ManagerIncidentReports = lazy(() => import("./pages/manager/IncidentReports"));
+const ManagerReports = lazy(() => import("./pages/manager/Reports"));
 const ManagerIncidentReportDetail = lazy(() => import("./pages/manager/IncidentReportDetail"));
 const ManagerChecklistSubmissionDetail = lazy(() => import("./pages/manager/ChecklistSubmissionDetail"));
 const AdminUserIncidentProfile = lazy(() => import("./pages/admin/UserIncidentProfile"));
@@ -121,6 +122,7 @@ const App = () => (
                     <Route path="checklists/:id" element={<ManagerChecklistSubmissionDetail />} />
                     <Route path="staff/:userId" element={<ManagerUserIncidentProfile />} />
                     <Route path="daily-overview" element={<ManagerDailyOverview />} />
+                    <Route path="reports" element={<ManagerReports />} />
                   </Route>
   
                   {/* Supervisor routes */}

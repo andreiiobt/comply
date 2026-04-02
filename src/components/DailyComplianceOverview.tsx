@@ -7,11 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CalendarIcon, CheckCircle2, XCircle, MapPin, Clock, User } from "lucide-react";
-import { format, subDays, startOfDay, endOfDay } from "date-fns";
+import { AlertCircle, CalendarIcon, CheckCircle2, XCircle, MapPin, Clock, User } from "lucide-react";
+import { format, startOfDay, endOfDay } from "date-fns";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -36,11 +37,11 @@ function isDueOnDate(
 
 export default function DailyComplianceOverview({ locationIds }: Props) {
   const { profile } = useAuth();
-  const [selectedDate, setSelectedDate] = useState<Date>(subDays(new Date(), 1));
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [filterLocationId, setFilterLocationId] = useState("all");
 
   // Fetch locations
-  const { data: locations = [] } = useQuery({
+  const { data: locations = [], isLoading: locationsLoading, isError: locationsError } = useQuery({
     queryKey: ["locations", profile?.company_id],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -58,7 +59,7 @@ export default function DailyComplianceOverview({ locationIds }: Props) {
   }, [locations, locationIds]);
 
   // Fetch all assignments
-  const { data: assignments = [] } = useQuery({
+  const { data: assignments = [], isLoading: assignmentsLoading, isError: assignmentsError } = useQuery({
     queryKey: ["all-checklist-assignments", profile?.company_id],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -72,7 +73,7 @@ export default function DailyComplianceOverview({ locationIds }: Props) {
   });
 
   // Fetch templates
-  const { data: templates = [] } = useQuery({
+  const { data: templates = [], isLoading: templatesLoading, isError: templatesError } = useQuery({
     queryKey: ["all-checklist-templates", profile?.company_id],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -86,7 +87,7 @@ export default function DailyComplianceOverview({ locationIds }: Props) {
   });
 
   // Fetch user_roles to map users to locations
-  const { data: userRoles = [] } = useQuery({
+  const { data: userRoles = [], isLoading: userRolesLoading } = useQuery({
     queryKey: ["user-roles-locations", profile?.company_id],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -110,9 +111,9 @@ export default function DailyComplianceOverview({ locationIds }: Props) {
     return m;
   }, [userRoles]);
 
-  // Fetch submissions for selected date — only approved or pending
+  // Fetch submissions for selected date
   const dateStr = format(selectedDate, "yyyy-MM-dd");
-  const { data: submissions = [], isLoading: submissionsLoading } = useQuery({
+  const { data: submissions = [], isLoading: submissionsLoading, isError: submissionsError } = useQuery({
     queryKey: ["daily-submissions", dateStr, profile?.company_id],
     queryFn: async () => {
       const dayStart = startOfDay(selectedDate).toISOString();
@@ -121,8 +122,7 @@ export default function DailyComplianceOverview({ locationIds }: Props) {
         .from("checklist_submissions")
         .select("id, template_id, user_id, completed_at, created_at, status")
         .gte("created_at", dayStart)
-        .lte("created_at", dayEnd)
-        .in("status", ["approved", "pending"]);
+        .lte("created_at", dayEnd);
       if (error) throw error;
       return data || [];
     },
@@ -169,6 +169,8 @@ export default function DailyComplianceOverview({ locationIds }: Props) {
           isDueOnDate(a as any, selectedDate) &&
           (
             a.assign_type === "all" ||
+            a.assign_type === "custom_role" ||
+            a.assign_type === "role" ||
             (a.assign_type === "location" && a.assign_value === loc.id)
           )
       );
@@ -205,6 +207,107 @@ export default function DailyComplianceOverview({ locationIds }: Props) {
   const totalCompleted = complianceData.reduce((s, l) => s + l.completedCount, 0);
   const totalDue = complianceData.reduce((s, l) => s + l.totalCount, 0);
   const completionRate = totalDue > 0 ? Math.round((totalCompleted / totalDue) * 100) : 0;
+
+  const isInitialLoading = locationsLoading || assignmentsLoading || templatesLoading || userRolesLoading;
+  const hasError = locationsError || assignmentsError || templatesError || submissionsError;
+
+  // Skeleton shown while the foundational data loads (locations, assignments, templates)
+  if (isInitialLoading) {
+    return (
+      <div className="space-y-6">
+        {/* Header controls skeleton */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Skeleton className="h-9 w-44 rounded-md" />
+          <Skeleton className="h-9 w-40 rounded-md" />
+        </div>
+
+        {/* Stats skeleton */}
+        <div className="grid grid-cols-3 gap-3">
+          {[0, 1, 2].map((i) => (
+            <Card key={i} className="rounded-2xl">
+              <CardContent className="p-4 text-center space-y-2">
+                <Skeleton className="h-7 w-12 mx-auto rounded" />
+                <Skeleton className="h-3 w-16 mx-auto rounded" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Progress bar skeleton */}
+        <Skeleton className="h-2 w-full rounded-full" />
+
+        {/* Chart skeleton */}
+        <Card className="rounded-2xl">
+          <CardContent className="p-4">
+            <Skeleton className="h-32 w-full rounded" />
+          </CardContent>
+        </Card>
+
+        {/* Location card skeletons */}
+        {[0, 1].map((i) => (
+          <Card key={i} className="rounded-2xl">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-4 w-4 rounded" />
+                  <Skeleton className="h-4 w-32 rounded" />
+                </div>
+                <Skeleton className="h-5 w-10 rounded-full" />
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 space-y-3">
+              {[0, 1, 2].map((j) => (
+                <div key={j} className="flex items-center gap-2 py-1">
+                  <Skeleton className="h-4 w-4 rounded-full shrink-0" />
+                  <div className="space-y-1 flex-1">
+                    <Skeleton className="h-3.5 w-48 rounded" />
+                    <Skeleton className="h-3 w-32 rounded" />
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  // Error state shown if any critical query fails
+  if (hasError) {
+    return (
+      <div className="space-y-6">
+        {/* Keep controls visible so user can retry by changing date */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <CalendarIcon className="h-4 w-4" />
+                {format(selectedDate, "PPP")}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={(d) => d && setSelectedDate(d)}
+                disabled={(d) => d > new Date()}
+                initialFocus
+                className={cn("p-3 pointer-events-auto")}
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        <Card className="rounded-2xl border-destructive/30">
+          <CardContent className="p-8 text-center">
+            <AlertCircle className="h-8 w-8 text-destructive mx-auto mb-3" />
+            <p className="text-sm font-medium text-foreground mb-1">Couldn't load compliance data</p>
+            <p className="text-xs text-muted-foreground">Check your connection and refresh the page.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -274,9 +377,34 @@ export default function DailyComplianceOverview({ locationIds }: Props) {
       {/* 7-day trend chart */}
       <WeeklyTrendChart locationIds={locationIds} assignments={assignments} />
 
-      {/* Per-location cards */}
+      {/* Per-location cards — show skeleton rows while submissions are fetching on date change */}
       {submissionsLoading ? (
-        <p className="text-muted-foreground text-sm">Loading...</p>
+        <>
+          {[0, 1].map((i) => (
+            <Card key={i} className="rounded-2xl">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-4 w-4 rounded" />
+                    <Skeleton className="h-4 w-32 rounded" />
+                  </div>
+                  <Skeleton className="h-5 w-10 rounded-full" />
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-3">
+                {[0, 1, 2].map((j) => (
+                  <div key={j} className="flex items-center gap-2 py-1">
+                    <Skeleton className="h-4 w-4 rounded-full shrink-0" />
+                    <div className="space-y-1 flex-1">
+                      <Skeleton className="h-3.5 w-48 rounded" />
+                      <Skeleton className="h-3 w-32 rounded" />
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ))}
+        </>
       ) : complianceData.length === 0 ? (
         <Card className="rounded-2xl">
           <CardContent className="p-8 text-center text-muted-foreground">

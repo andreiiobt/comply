@@ -114,7 +114,21 @@ Deno.serve(async (req) => {
 
         const data = await resp.json();
         allEmployees = allEmployees.concat(data.results || []);
-        nextCursor = data.next || null;
+
+        // Merge returns `next` as a full URL — extract the cursor token from it
+        if (data.next) {
+          try {
+            const nextUrl = new URL(data.next);
+            nextCursor = nextUrl.searchParams.get("cursor") || data.next;
+          } catch {
+            // Not a URL — treat it as a raw cursor token
+            nextCursor = data.next;
+          }
+        } else {
+          nextCursor = null;
+        }
+
+        console.log(`Fetched page: ${data.results?.length ?? 0} employees, total so far: ${allEmployees.length}, has next: ${!!nextCursor}`);
       } while (nextCursor);
 
       console.log(`Merge API returned ${allEmployees.length} employees for company ${company_id}`);
@@ -175,6 +189,9 @@ Deno.serve(async (req) => {
         const email = emp.work_email || emp.personal_email;
         if (!email) continue;
 
+        // Skip employees who haven't started yet — don't invite them before their start date
+        if (emp.employment_status === "PENDING") continue;
+
         const fullName = [emp.first_name, emp.last_name].filter(Boolean).join(" ") || email;
         const mergeId = emp.id;
         const isTerminated = emp.employment_status === "INACTIVE" || emp.termination_date;
@@ -197,7 +214,7 @@ Deno.serve(async (req) => {
         if (mergeId) {
           const { data: byMergeId } = await supabaseAdmin
             .from("profiles")
-            .select("*, user_roles(id, role, location_id)")
+            .select("*, user_roles(id, role, location_id), terminated_at")
             .eq("merge_employee_id", mergeId)
             .eq("company_id", company_id)
             .maybeSingle();
@@ -210,7 +227,7 @@ Deno.serve(async (req) => {
           if (matchedUser) {
             const { data: byUserId } = await supabaseAdmin
               .from("profiles")
-              .select("*, user_roles(id, role, location_id)")
+              .select("*, user_roles(id, role, location_id), terminated_at")
               .eq("user_id", matchedUser.id)
               .eq("company_id", company_id)
               .maybeSingle();
@@ -220,14 +237,40 @@ Deno.serve(async (req) => {
 
         if (existingProfile) {
           if (isTerminated) {
-            // Deactivate: remove roles for this company only
-            await supabaseAdmin
-              .from("user_roles")
-              .delete()
-              .eq("user_id", existingProfile.user_id)
-              .eq("company_id", company_id);
+            // Only terminate if not already terminated
+            if (!existingProfile.terminated_at) {
+              // Set terminated_at on the profile
+              await supabaseAdmin
+                .from("profiles")
+                .update({ terminated_at: new Date().toISOString() })
+                .eq("user_id", existingProfile.user_id);
+
+              // Ban the auth account so they cannot log in
+              await supabaseAdmin.auth.admin.updateUserById(existingProfile.user_id, {
+                ban_duration: "876000h",
+              });
+
+              // Remove roles for this company
+              await supabaseAdmin
+                .from("user_roles")
+                .delete()
+                .eq("user_id", existingProfile.user_id)
+                .eq("company_id", company_id);
+            }
             usersDeactivated++;
           } else {
+            // If the user was previously terminated, reinstate them
+            if (existingProfile.terminated_at) {
+              await supabaseAdmin
+                .from("profiles")
+                .update({ terminated_at: null })
+                .eq("user_id", existingProfile.user_id);
+
+              await supabaseAdmin.auth.admin.updateUserById(existingProfile.user_id, {
+                ban_duration: "none",
+              });
+            }
+
             // Update profile
             await supabaseAdmin
               .from("profiles")

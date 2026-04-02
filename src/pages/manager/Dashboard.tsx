@@ -11,19 +11,22 @@ import { submissionStatusColor } from "@/lib/statusColors";
 
 export default function ManagerDashboard() {
   const navigate = useNavigate();
-  const { roles } = useAuth();
+  const { user, roles } = useAuth();
   const managerRole = roles.find((r) => r.role === "manager");
   const locationId = managerRole?.location_id;
 
   const { data: staffIds = [] } = useQuery({
-    queryKey: ["mgr-staff-ids", locationId],
+    queryKey: ["mgr-staff-ids", locationId, user?.id],
     queryFn: async () => {
       const { data } = await supabase
         .from("user_roles")
         .select("user_id")
         .eq("location_id", locationId!)
         .eq("role", "staff");
-      return (data || []).map((r) => r.user_id);
+      const ids = (data || []).map((r) => r.user_id);
+      // Include the manager's own submissions too
+      if (user?.id && !ids.includes(user.id)) ids.push(user.id);
+      return ids;
     },
     enabled: !!locationId,
   });
@@ -89,12 +92,17 @@ export default function ManagerDashboard() {
 
   const totalSubmissions = submissions.length;
   const approvedCount = submissions.filter((s: any) => s.status === "approved").length;
+  const pendingSubmissions = submissions.filter((s: any) => s.status === "pending");
   const approvalRate = totalSubmissions > 0 ? Math.round((approvedCount / totalSubmissions) * 100) : 0;
 
   const nameMap: Record<string, string> = {};
   staffProfiles.forEach((p) => { nameMap[p.user_id] = p.full_name || "Unknown"; });
 
-  const recentSubmissions = submissions.slice(0, 5);
+  // Pending first, then most recent non-pending, up to 5 total
+  const recentSubmissions = [
+    ...pendingSubmissions,
+    ...submissions.filter((s: any) => s.status !== "pending"),
+  ].slice(0, 5);
 
   const stats: StatItem[] = [
     { title: "Staff Members", value: staffIds.length.toString(), icon: Users, color: "text-primary" },
@@ -117,16 +125,38 @@ export default function ManagerDashboard() {
 
       <StatsGrid stats={stats} />
 
-      {recentSubmissions.length > 0 && (
-        <Card className="rounded-2xl ">
-          <CardHeader>
+      <Card className="rounded-2xl">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
             <CardTitle className="text-base font-display flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-primary" /> Recent Submissions
+              <CheckCircle2 className="h-5 w-5 text-primary" />
+              Submissions
+              {pendingSubmissions.length > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold w-5 h-5">
+                  {pendingSubmissions.length}
+                </span>
+              )}
             </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {recentSubmissions.map((c: any) => (
-              <div key={c.id} className="flex items-center justify-between text-sm py-1.5 border-b last:border-0">
+            <Button variant="outline" size="sm" className="rounded-xl text-xs" onClick={() => navigate("/manager/checklists")}>
+              Review All
+            </Button>
+          </div>
+          {pendingSubmissions.length > 0 && (
+            <p className="text-xs text-destructive font-medium mt-1">
+              {pendingSubmissions.length} submission{pendingSubmissions.length !== 1 ? "s" : ""} pending review
+            </p>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-1 pt-0">
+          {recentSubmissions.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-3 text-center">No submissions yet.</p>
+          ) : (
+            recentSubmissions.map((c: any) => (
+              <div
+                key={c.id}
+                className="flex items-center justify-between text-sm py-2 border-b last:border-0 cursor-pointer hover:bg-muted/50 rounded-lg px-2 -mx-2 transition-colors"
+                onClick={() => navigate(`/manager/checklists/${c.id}`)}
+              >
                 <span className="font-display font-semibold">{nameMap[c.user_id] || "Staff"}</span>
                 <div className="flex items-center gap-2">
                   <span className={`text-xs font-medium capitalize ${submissionStatusColor(c.status)}`}>
@@ -135,10 +165,10 @@ export default function ManagerDashboard() {
                   <span className="text-xs text-muted-foreground">{new Date(c.created_at).toLocaleDateString()}</span>
                 </div>
               </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+            ))
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

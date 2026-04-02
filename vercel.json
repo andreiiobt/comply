@@ -4,8 +4,14 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/sync-hris",
+      "schedule": "0 1 * * *"
     }
   ]
 }

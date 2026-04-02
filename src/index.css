@@ -1,36 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Goudy+Bookletter+1911&display=swap');
-
-@font-face {
-  font-family: 'Averta';
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-  src: local('Averta'), local('Averta-Regular');
-}
-
-@font-face {
-  font-family: 'Averta';
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-  src: local('Averta Medium'), local('Averta-Medium');
-}
-
-@font-face {
-  font-family: 'Averta';
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-  src: local('Averta Semibold'), local('Averta-Semibold');
-}
-
-@font-face {
-  font-family: 'Averta';
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-  src: local('Averta Bold'), local('Averta-Bold');
-}
+@import url('https://fonts.googleapis.com/css2?family=Radio+Canada+Big:ital,wght@0,400..700;1,400..700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -47,8 +15,8 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
 
-    --primary: 109 63% 61%;
-    --primary-foreground: 110 100% 5%;
+    --primary: 108 91% 9%;
+    --primary-foreground: 94 98% 81%;
 
     --secondary: 96 16% 94%; /* #EFF2ED */
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -77,12 +45,12 @@
 
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 215.4 16.3% 46.9%;
-    --sidebar-primary: 109 63% 61%;
-    --sidebar-primary-foreground: 110 100% 5%;
+    --sidebar-primary: 108 91% 9%;
+    --sidebar-primary-foreground: 94 98% 81%;
     --sidebar-accent: 114 100% 95%;
-    --sidebar-accent-foreground: 108 91% 35%;
+    --sidebar-accent-foreground: 108 91% 9%;
     --sidebar-border: 214.3 31.8% 91.4%;
-    --sidebar-ring: 109 63% 61%;
+    --sidebar-ring: 108 91% 9%;
   }
 
   .dark {
@@ -95,8 +63,8 @@
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 109 63% 61%; 
-    --primary-foreground: 110 100% 5%;
+    --primary: 108 91% 9%;
+    --primary-foreground: 94 98% 81%;
 
     --secondary: 217.2 32.6% 17.5%; 
     --secondary-foreground: 210 40% 98%;

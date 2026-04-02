@@ -111,7 +111,31 @@ Deno.serve(async (req) => {
     )
   }
 
-  const inviteUrl = `https://${ROOT_DOMAIN}/invite/${inviteCode}`
+  // Generate a Supabase magic auth link so the user is logged in the moment they
+  // click — no separate email-verification step needed.
+  const redirectTo = `https://${ROOT_DOMAIN}/invite/${inviteCode}`
+
+  let inviteUrl = redirectTo // fallback if generateLink fails
+
+  const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+    type: 'invite',
+    email,
+    options: { redirectTo },
+  })
+
+  if (!linkError && linkData?.properties?.action_link) {
+    inviteUrl = linkData.properties.action_link
+  } else {
+    // User may already exist — fall back to a magic link for existing accounts
+    const { data: mlData } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'magiclink',
+      email,
+      options: { redirectTo },
+    })
+    if (mlData?.properties?.action_link) {
+      inviteUrl = mlData.properties.action_link
+    }
+  }
 
   const html = await renderAsync(
     React.createElement(InviteEmail, {

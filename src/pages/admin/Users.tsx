@@ -18,7 +18,7 @@ import {
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Users as UsersIcon, Shield, UserCog, User, UserPlus, Copy, Link2, Mail, Trash2, Clock, Tag, ArrowLeft, ArrowRight, Search, Filter, Eye, ChevronRight, Home, X } from "lucide-react";
+import { Users as UsersIcon, Shield, UserCog, User, UserPlus, Copy, Link2, Mail, Trash2, Clock, Tag, ArrowLeft, ArrowRight, Search, Filter, Eye, ChevronRight, Home, X, UserX, ChevronDown } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -31,10 +31,10 @@ const roleIcons: Record<string, any> = {
 };
 
 const roleColors: Record<string, string> = {
-  admin: "bg-primary/10 text-primary border-primary/20",
-  manager: "bg-secondary/10 text-secondary border-secondary/20",
-  supervisor: "bg-accent/10 text-accent-foreground border-accent/20",
-  staff: "bg-muted text-muted-foreground border-muted-foreground/20",
+  admin: "bg-primary text-primary-foreground",
+  manager: "bg-primary text-primary-foreground",
+  supervisor: "bg-primary text-primary-foreground",
+  staff: "bg-primary text-primary-foreground",
 };
 
 function generateInviteCode(): string {
@@ -72,11 +72,15 @@ export default function AdminUsers() {
   // Delete user state
   const [deleteConfirmUser, setDeleteConfirmUser] = useState<{ user_id: string; full_name: string | null } | null>(null);
 
+  // Reinstate user state
+  const [reinstateConfirmUser, setReinstateConfirmUser] = useState<{ user_id: string; full_name: string | null } | null>(null);
+
   // Filter state
   const [filterName, setFilterName] = useState("");
   const [filterRole, setFilterRole] = useState<string>("all");
   const [filterLocationId, setFilterLocationId] = useState<string>("all");
   const [filterCustomRoleId, setFilterCustomRoleId] = useState<string>("all");
+  const [showTerminated, setShowTerminated] = useState(false);
 
   const { data: profiles = [], isLoading } = useQuery({
     queryKey: ["admin-profiles", profile?.company_id],
@@ -88,6 +92,7 @@ export default function AdminUsers() {
       if (error) throw error;
       return data;
     },
+    // include terminated users so they appear in the terminated section
     enabled: !!profile?.company_id,
   });
 
@@ -272,12 +277,29 @@ export default function AdminUsers() {
       return data;
     },
     onSuccess: () => {
-      toast.success("User removed");
+      toast.success("User terminated");
       setDeleteConfirmUser(null);
       queryClient.invalidateQueries({ queryKey: ["admin-profiles"] });
       queryClient.invalidateQueries({ queryKey: ["admin-user-custom-roles"] });
     },
-    onError: (error: any) => toast.error(error.message || "Failed to remove user"),
+    onError: (error: any) => toast.error(error.message || "Failed to terminate user"),
+  });
+
+  const reinstateMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const { data, error } = await supabase.functions.invoke("reinstate-user", {
+        body: { user_id: userId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("User reinstated");
+      setReinstateConfirmUser(null);
+      queryClient.invalidateQueries({ queryKey: ["admin-profiles"] });
+    },
+    onError: (error: any) => toast.error(error.message || "Failed to reinstate user"),
   });
 
   const saveUserEdits = async () => {
@@ -362,21 +384,20 @@ export default function AdminUsers() {
 
   const pendingInvites = invitations.filter((i: any) => i.status === "pending");
 
-  // Apply filters to profiles
-  const filteredProfiles = profiles.filter((p: any) => {
-    // Name filter
+  const activeProfiles = profiles.filter((p: any) => !p.terminated_at);
+  const terminatedProfiles = profiles.filter((p: any) => !!p.terminated_at);
+
+  // Apply filters to active profiles only
+  const filteredProfiles = activeProfiles.filter((p: any) => {
     if (filterName && !(p.full_name || "").toLowerCase().includes(filterName.toLowerCase())) return false;
-    // Role filter
     if (filterRole !== "all") {
       const roles = (p.user_roles || []).map((r: any) => r.role);
       if (!roles.includes(filterRole)) return false;
     }
-    // Location filter
     if (filterLocationId !== "all") {
       const locIds = (p.user_roles || []).map((r: any) => r.location_id).filter(Boolean);
       if (!locIds.includes(filterLocationId)) return false;
     }
-    // Custom role filter
     if (filterCustomRoleId !== "all") {
       const userCrIds = getUserCustomRoleIds(p.user_id);
       if (!userCrIds.includes(filterCustomRoleId)) return false;
@@ -727,7 +748,7 @@ export default function AdminUsers() {
         )}
       </div>
 
-      {/* User List */}
+      {/* Active User List */}
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
@@ -739,7 +760,7 @@ export default function AdminUsers() {
           <CardContent className="flex flex-col items-center py-12">
             <UsersIcon className="h-12 w-12 text-muted-foreground/40 mb-4" />
             <p className="text-muted-foreground">
-              {profiles.length === 0 ? "No users yet." : "No users match these filters."}
+              {activeProfiles.length === 0 ? "No users yet." : "No users match these filters."}
             </p>
           </CardContent>
         </Card>
@@ -765,6 +786,41 @@ export default function AdminUsers() {
               />
             );
           })}
+        </div>
+      )}
+
+      {/* Terminated Users */}
+      {terminatedProfiles.length > 0 && (
+        <div className="space-y-3">
+          <button
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => setShowTerminated((v) => !v)}
+          >
+            <UserX className="h-4 w-4" />
+            <span>Terminated ({terminatedProfiles.length})</span>
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showTerminated ? "rotate-180" : ""}`} />
+          </button>
+
+          {showTerminated && (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {terminatedProfiles.map((p: any, i: number) => {
+                const roleRow = (p.user_roles || [])[0];
+                const locationName = roleRow ? getLocationName(roleRow.location_id) : null;
+                return (
+                  <UserCard
+                    key={p.user_id}
+                    user={p}
+                    role={roleRow?.role}
+                    locationName={locationName}
+                    index={i}
+                    terminated
+                    terminatedAt={p.terminated_at}
+                    onReinstate={() => setReinstateConfirmUser({ user_id: p.user_id, full_name: p.full_name })}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -852,9 +908,9 @@ export default function AdminUsers() {
       <AlertDialog open={!!deleteConfirmUser} onOpenChange={(open) => { if (!open) setDeleteConfirmUser(null); }}>
         <AlertDialogContent className="rounded-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle className="font-display">Remove User</AlertDialogTitle>
+            <AlertDialogTitle className="font-display">Terminate User</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to permanently remove <span className="font-semibold text-foreground">{deleteConfirmUser?.full_name || "this user"}</span>? This will delete their account, roles, and all associated data. This action cannot be undone.
+              <span className="font-semibold text-foreground">{deleteConfirmUser?.full_name || "This user"}</span> will be marked as terminated and blocked from logging in. Their submissions, incidents, and history are preserved and visible under the Terminated section.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -864,7 +920,28 @@ export default function AdminUsers() {
               onClick={() => deleteConfirmUser && deleteUserMutation.mutate(deleteConfirmUser.user_id)}
               disabled={deleteUserMutation.isPending}
             >
-              {deleteUserMutation.isPending ? "Removing..." : "Remove User"}
+              {deleteUserMutation.isPending ? "Terminating..." : "Terminate User"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!reinstateConfirmUser} onOpenChange={(open) => { if (!open) setReinstateConfirmUser(null); }}>
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display">Reinstate User</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-semibold text-foreground">{reinstateConfirmUser?.full_name || "This user"}</span> will be reinstated as an active member and regain the ability to log in.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-xl"
+              onClick={() => reinstateConfirmUser && reinstateMutation.mutate(reinstateConfirmUser.user_id)}
+              disabled={reinstateMutation.isPending}
+            >
+              {reinstateMutation.isPending ? "Reinstating..." : "Reinstate User"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

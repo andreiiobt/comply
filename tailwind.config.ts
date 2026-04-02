@@ -14,8 +14,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        display: ["Averta", "Inter", "sans-serif"],
-        body: ["Averta", "Inter", "sans-serif"],
+        display: ["Radio Canada Big", "sans-serif"],
+        body: ["Radio Canada Big", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",

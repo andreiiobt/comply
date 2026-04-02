@@ -160,7 +160,7 @@ export default function ManagerStaff() {
     mutationFn: async ({ userId, roleIds }: { userId: string; roleIds: string[] }) => {
       await supabase.from("user_custom_roles").delete().eq("user_id", userId);
       if (roleIds.length > 0) {
-        const rows = roleIds.map((roleId) => ({ user_id: userId, custom_role_id: roleId }));
+        const rows = roleIds.map((roleId) => ({ user_id: userId, custom_role_id: roleId, company_id: companyId }));
         const { error } = await supabase.from("user_custom_roles").insert(rows);
         if (error) throw error;
       }

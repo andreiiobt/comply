@@ -36,7 +36,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check admin role
     const { data: isAdmin } = await userClient.rpc("has_role", {
       _user_id: callingUser.id,
       _role: "admin",
@@ -56,16 +55,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Prevent self-termination
-    if (user_id === callingUser.id) {
-      return new Response(JSON.stringify({ error: "Cannot terminate your own account" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Verify target user is in the same company
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Verify target is in the same company and is actually terminated
     const { data: callerProfile } = await adminClient
       .from("profiles")
       .select("company_id")
@@ -84,30 +76,35 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Soft-terminate: mark the profile and ban the auth account.
-    // This preserves all historical data (submissions, incidents, etc.)
-    // while blocking the user from logging in.
+    if (!targetProfile.terminated_at) {
+      return new Response(JSON.stringify({ error: "User is not terminated" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Clear terminated_at on the profile
     const { error: profileError } = await adminClient
       .from("profiles")
-      .update({ terminated_at: new Date().toISOString() })
+      .update({ terminated_at: null })
       .eq("user_id", user_id);
 
     if (profileError) {
-      throw new Error(`Failed to mark user as terminated: ${profileError.message}`);
+      throw new Error(`Failed to reinstate profile: ${profileError.message}`);
     }
 
-    // Ban the auth account for 100 years — effectively disables login
-    const { error: banError } = await adminClient.auth.admin.updateUserById(user_id, {
-      ban_duration: "876000h",
+    // Unban the auth account
+    const { error: unbanError } = await adminClient.auth.admin.updateUserById(user_id, {
+      ban_duration: "none",
     });
 
-    if (banError) {
-      // Roll back the profile update if banning failed
+    if (unbanError) {
+      // Roll back
       await adminClient
         .from("profiles")
-        .update({ terminated_at: null })
+        .update({ terminated_at: targetProfile.terminated_at })
         .eq("user_id", user_id);
-      throw new Error(`Failed to disable user account: ${banError.message}`);
+      throw new Error(`Failed to unban user account: ${unbanError.message}`);
     }
 
     return new Response(JSON.stringify({ success: true }), {

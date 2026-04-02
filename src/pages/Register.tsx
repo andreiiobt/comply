@@ -20,7 +20,8 @@ function slugify(text: string): string {
 export default function Register() {
   const [companyName, setCompanyName] = useState("");
   const [slug, setSlug] = useState("");
-  const [fullName, setFullName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -38,6 +39,8 @@ export default function Register() {
     e.preventDefault();
     setIsLoading(true);
 
+    const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+
     try {
       const { data, error } = await supabase.functions.invoke("register-company", {
         body: { companyName, slug, fullName, email, password },
@@ -49,6 +52,8 @@ export default function Register() {
       // If we got a checkout URL, sign in first then redirect to Polar
       if (data?.checkoutUrl) {
         await supabase.auth.signInWithPassword({ email, password });
+        // Ensure name is set on the auth user in case the DB trigger ran before the edge function
+        await supabase.auth.updateUser({ data: { full_name: fullName } });
         toast.success("Company created! Redirecting to set up billing...");
         window.location.href = data.checkoutUrl;
         return;
@@ -59,6 +64,16 @@ export default function Register() {
         email,
         password,
       });
+
+      if (!signInError) {
+        // Ensure the profile name is correct — fixes cases where the DB trigger
+        // creates the profile row before the edge function can write the name
+        await supabase.auth.updateUser({ data: { full_name: fullName } });
+        await supabase
+          .from("profiles")
+          .update({ full_name: fullName })
+          .eq("user_id", (await supabase.auth.getUser()).data.user?.id ?? "");
+      }
 
       if (signInError) {
         toast.success("Company registered! Please log in.");
@@ -136,16 +151,29 @@ export default function Register() {
                   <span className="text-sm text-muted-foreground whitespace-nowrap">.comply.app</span>
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="fullName">Your Name</Label>
-                <Input
-                  id="fullName"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Jane Smith"
-                  required
-                  className="h-12 rounded-xl text-base"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName">First Name</Label>
+                  <Input
+                    id="firstName"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="Jane"
+                    required
+                    className="h-12 rounded-xl text-base"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName">Last Name</Label>
+                  <Input
+                    id="lastName"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="Smith"
+                    required
+                    className="h-12 rounded-xl text-base"
+                  />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>

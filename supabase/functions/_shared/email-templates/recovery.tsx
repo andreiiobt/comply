@@ -1,18 +1,7 @@
 /// <reference types="npm:@types/react@18.3.1" />
 
 import * as React from 'npm:react@18.3.1'
-
-import {
-  Body,
-  Button,
-  Container,
-  Head,
-  Heading,
-  Html,
-  Img,
-  Preview,
-  Text,
-} from 'npm:@react-email/components@0.0.22'
+import { Body, Button, Container, Head, Heading, Html, Img, Preview, Section, Text } from 'npm:@react-email/components@0.0.22'
 
 interface RecoveryEmailProps {
   siteName: string
@@ -24,17 +13,25 @@ const LOGO_URL = 'https://dtbspascjhwpommafcsh.supabase.co/storage/v1/object/pub
 export const RecoveryEmail = ({ siteName, confirmationUrl }: RecoveryEmailProps) => (
   <Html lang="en" dir="ltr">
     <Head />
-    <Preview>Reset your password for COMPLY</Preview>
+    <Preview>Reset your password for {siteName}</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Img src={LOGO_URL} alt="IOBT" width="120" height="40" style={logo} />
-        <Heading style={h1}>Reset your password</Heading>
-        <Text style={text}>
-          We received a request to reset your password for COMPLY. Click the button below to choose a new password.
-        </Text>
-        <Button style={button} href={confirmationUrl}>Reset Password</Button>
+        <Section style={logoSection}>
+          <Img src={LOGO_URL} alt="IOBT" width="80" height="27" />
+        </Section>
+        <Section style={card}>
+          <Heading style={h1}>Reset your password</Heading>
+          <Text style={text}>
+            We received a request to reset your password for <strong>{siteName}</strong>. Click the button below to choose a new password.
+          </Text>
+          <Text style={text}>This link expires in 1 hour.</Text>
+          <Section style={buttonSection}>
+            <Button style={button} href={confirmationUrl}>Reset Password</Button>
+          </Section>
+          <Text style={expiry}>If you didn't request a password reset, you can safely ignore this email. Your password will not be changed.</Text>
+        </Section>
         <Text style={footer}>
-          If you didn't request a password reset, you can safely ignore this email. Your password will not be changed.
+          &copy; {new Date().getFullYear()} IOBT. All rights reserved.
         </Text>
       </Container>
     </Body>
@@ -43,10 +40,13 @@ export const RecoveryEmail = ({ siteName, confirmationUrl }: RecoveryEmailProps)
 
 export default RecoveryEmail
 
-const main = { backgroundColor: '#ffffff', fontFamily: "'Goudy Bookletter 1911', Georgia, serif" }
-const container = { padding: '20px 25px' }
-const logo = { margin: '0 0 24px' }
-const h1 = { fontSize: '22px', fontWeight: 'bold' as const, color: '#1a1a1a', margin: '0 0 20px' }
-const text = { fontSize: '14px', color: '#737373', lineHeight: '1.5', margin: '0 0 25px', fontFamily: 'Inter, Arial, sans-serif' }
-const button = { backgroundColor: '#3079FF', color: '#ffffff', fontSize: '14px', borderRadius: '12px', padding: '12px 20px', textDecoration: 'none', fontFamily: 'Inter, Arial, sans-serif' }
-const footer = { fontSize: '12px', color: '#999999', margin: '30px 0 0', fontFamily: 'Inter, Arial, sans-serif' }
+const main = { backgroundColor: '#F6F7F5', fontFamily: 'Inter, Arial, sans-serif' }
+const container = { maxWidth: '520px', margin: '0 auto', padding: '40px 20px' }
+const logoSection = { marginBottom: '32px' }
+const card = { backgroundColor: '#ffffff', borderRadius: '16px', padding: '40px 36px', border: '1px solid #EFF2ED' }
+const h1 = { fontSize: '24px', fontWeight: '700', color: '#0A2B02', margin: '0 0 16px', letterSpacing: '-0.5px' }
+const text = { fontSize: '15px', color: '#555', lineHeight: '1.6', margin: '0 0 16px' }
+const buttonSection = { margin: '28px 0 20px' }
+const button = { backgroundColor: '#0A2B02', color: '#C7FE9D', fontSize: '15px', fontWeight: '600', borderRadius: '999px', padding: '14px 32px', textDecoration: 'none', display: 'inline-block' }
+const expiry = { fontSize: '13px', color: '#999', margin: '0' }
+const footer = { fontSize: '12px', color: '#aaa', margin: '24px 0 0', lineHeight: '1.6', textAlign: 'center' as const }
