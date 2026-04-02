@@ -17,3 +17,7 @@ project_id = "belpronrmaoebmfqvucv"
     verify_jwt = false
   [functions.send-invite-email]
     verify_jwt = false
+  [functions.delete-user]
+    verify_jwt = false
+  [functions.reinstate-user]
+    verify_jwt = false
