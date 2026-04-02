@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Shield, FileText, Check, Search, Plus, Upload, Trash2,
   AlertTriangle, Clock, ExternalLink, Calendar, ChevronDown, ChevronUp,
-  Award
+  Award, Download, File, Image as ImageIcon
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { format, isPast, differenceInDays } from "date-fns";
@@ -36,6 +36,27 @@ type PolicyAgreement = {
   policy_version: number;
   agreed_at: string;
 };
+
+type PolicyDocument = {
+  id: string;
+  policy_id: string;
+  file_name: string;
+  file_url: string;
+  file_type: string;
+  file_size: number;
+};
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function policyFileIcon(type: string) {
+  if (type === "application/pdf") return <File className="h-3.5 w-3.5 text-red-500" />;
+  if (type.startsWith("image/")) return <ImageIcon className="h-3.5 w-3.5 text-blue-500" />;
+  return <FileText className="h-3.5 w-3.5 text-muted-foreground" />;
+}
 
 type UserLicense = {
   id: string;
@@ -101,6 +122,26 @@ export default function StaffCompliance() {
     },
     enabled: policies.length > 0 && !!user?.id,
   });
+
+  // Fetch policy documents
+  const { data: policyDocuments = [] } = useQuery<PolicyDocument[]>({
+    queryKey: ["staff-policy-documents", profile?.company_id],
+    queryFn: async () => {
+      const pIds = policies.map((p) => p.id);
+      if (!pIds.length) return [];
+      const { data, error } = await (supabase as any)
+        .from("policy_documents")
+        .select("id, policy_id, file_name, file_url, file_type, file_size")
+        .in("policy_id", pIds)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return (data || []) as PolicyDocument[];
+    },
+    enabled: policies.length > 0,
+  });
+
+  const getDocsForPolicy = (policyId: string) =>
+    policyDocuments.filter((d) => d.policy_id === policyId);
 
   // Fetch my licenses
   const { data: licenses = [], isLoading: loadingLicenses } = useQuery<UserLicense[]>({
@@ -298,6 +339,7 @@ export default function StaffCompliance() {
                         key={policy.id}
                         policy={policy}
                         status="pending"
+                        documents={getDocsForPolicy(policy.id)}
                         expanded={expandedPolicy === policy.id}
                         onToggle={() => setExpandedPolicy(expandedPolicy === policy.id ? null : policy.id)}
                         onAgree={() => setReadingPolicy(policy)}
@@ -320,6 +362,7 @@ export default function StaffCompliance() {
                           policy={policy}
                           status="agreed"
                           agreedAt={agr?.agreed_at}
+                          documents={getDocsForPolicy(policy.id)}
                           expanded={expandedPolicy === policy.id}
                           onToggle={() => setExpandedPolicy(expandedPolicy === policy.id ? null : policy.id)}
                           i={i}
@@ -338,6 +381,7 @@ export default function StaffCompliance() {
                       key={policy.id}
                       policy={policy}
                       status="auto"
+                      documents={getDocsForPolicy(policy.id)}
                       expanded={expandedPolicy === policy.id}
                       onToggle={() => setExpandedPolicy(expandedPolicy === policy.id ? null : policy.id)}
                       i={0}
@@ -460,6 +504,27 @@ export default function StaffCompliance() {
             <div className="prose prose-sm w-full max-w-full text-foreground [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_code]:break-words [&_p]:break-words">
               <ReactMarkdown>{readingPolicy?.body || ""}</ReactMarkdown>
             </div>
+            {readingPolicy && getDocsForPolicy(readingPolicy.id).length > 0 && (
+              <div className="mt-4 pt-3 border-t space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Attachments</p>
+                <div className="flex flex-wrap gap-2">
+                  {getDocsForPolicy(readingPolicy.id).map((doc) => (
+                    <a
+                      key={doc.id}
+                      href={doc.file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors"
+                    >
+                      {policyFileIcon(doc.file_type)}
+                      <span className="truncate max-w-[140px]">{doc.file_name}</span>
+                      <span className="text-muted-foreground">{formatFileSize(doc.file_size)}</span>
+                      <Download className="h-3 w-3 text-muted-foreground" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter className="flex-col gap-2 sm:flex-row pt-4 border-t">
             <p className="text-xs text-muted-foreground flex-1">
@@ -564,6 +629,7 @@ function PolicyRow({
   policy,
   status,
   agreedAt,
+  documents = [],
   expanded,
   onToggle,
   onAgree,
@@ -573,6 +639,7 @@ function PolicyRow({
   policy: Policy;
   status: "pending" | "agreed" | "auto";
   agreedAt?: string;
+  documents?: PolicyDocument[];
   expanded: boolean;
   onToggle: () => void;
   onAgree?: () => void;
@@ -650,6 +717,26 @@ function PolicyRow({
                     <ReactMarkdown>{policy.body || "*No content.*"}</ReactMarkdown>
                   </div>
                 </div>
+                {documents.length > 0 && (
+                  <div className="mt-3 pt-2 border-t space-y-1.5">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Attachments</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {documents.map((doc) => (
+                        <a
+                          key={doc.id}
+                          href={doc.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] hover:bg-muted/50 transition-colors"
+                        >
+                          {policyFileIcon(doc.file_type)}
+                          <span className="truncate max-w-[120px]">{doc.file_name}</span>
+                          <Download className="h-3 w-3 text-muted-foreground" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {status === "pending" && onAgree && (
                   <Button size="sm" className="mt-3 rounded-xl gap-1.5 w-full" onClick={onAgree}>
                     <Check className="h-4 w-4" /> Read & Agree
